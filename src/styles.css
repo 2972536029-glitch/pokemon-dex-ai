@@ -1,0 +1,371 @@
+/* ====================================================================
+   Xsolla School · Homework — Random Pokemon
+   Self-contained styles (extracted from the samples project).
+   ==================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
+
+:root {
+  --bg: #FFF8E1;
+  --bg-card: #FFFFFF;
+  --border: #F0D880;
+  --text: #1A1A1A;
+  --text-2: #4F4F4F;
+  --text-dim: #8C8C8C;
+  --pokeball-red: #EE1515;
+  --pokeball-red-deep: #C00000;
+  --pikachu-yellow: #FFCB05;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  min-height: 100%;
+  margin: 0;
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(238, 21, 21, 0.06), transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(255, 203, 5, 0.10), transparent 40%);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============ Page layout ============ */
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}
+
+.app-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.app-header h1 {
+  margin: 0 0 8px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.app-header p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* ============ Pokemon ============ */
+.pkmn {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.pkmn-stage {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: 24px;
+  padding: 40px 32px;
+  border: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 540px;
+  overflow: hidden;
+}
+
+.pkmn-stage-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center top, rgba(238, 21, 21, 0.08), transparent 60%),
+    radial-gradient(circle at center bottom, rgba(255, 203, 5, 0.10), transparent 60%);
+  pointer-events: none;
+}
+
+.pkmn-stage > * { position: relative; z-index: 1; }
+
+.pkmn-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 80px 0;
+  color: var(--text-2);
+}
+
+.pkmn-error-emoji {
+  font-size: 48px;
+}
+
+.pokeball {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, var(--pokeball-red) 0 calc(50% - 4px), #1a1a1a calc(50% - 4px) calc(50% + 4px), #fff calc(50% + 4px) 100%);
+  border: 4px solid #1a1a1a;
+  position: relative;
+  box-shadow: inset -8px -8px 0 rgba(0, 0, 0, 0.12);
+}
+
+.pokeball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid #1a1a1a;
+  transform: translate(-50%, -50%);
+}
+
+.pokeball.spinning {
+  animation: shake 0.6s ease-in-out infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(-10deg); }
+  50% { transform: rotate(10deg); }
+}
+
+.pkmn-card {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  animation: pop-in 0.4s ease-out;
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.pkmn-card-id {
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.pkmn-card-image-wrap {
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--type-color) 0%, transparent 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.pkmn-card-image-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 60%, rgba(255,255,255,0.6) 65%, transparent 70%);
+  pointer-events: none;
+}
+
+.pkmn-card-image {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.20));
+}
+
+.pkmn-card-image-placeholder {
+  font-size: 96px;
+  color: var(--text-dim);
+}
+
+.pkmn-card-name {
+  font-size: 40px;
+  font-weight: 800;
+  margin: 8px 0 4px;
+  text-transform: capitalize;
+  letter-spacing: -0.02em;
+}
+
+.pkmn-card-types {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pkmn-type-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 999px;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.pkmn-card-basics {
+  display: flex;
+  gap: 32px;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+.pkmn-card-basics .muted {
+  color: var(--text-dim);
+  margin-right: 6px;
+}
+
+.pkmn-card-stats {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pkmn-stat {
+  display: grid;
+  grid-template-columns: 70px 1fr 42px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.pkmn-stat-label {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.pkmn-stat-bar {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pkmn-stat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--type-color), var(--pikachu-yellow));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.pkmn-stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  text-align: right;
+}
+
+.catch-btn {
+  margin-top: 24px;
+  padding: 14px 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--pokeball-red);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 0 var(--pokeball-red-deep);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.catch-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 0 var(--pokeball-red-deep);
+}
+
+.catch-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 var(--pokeball-red-deep);
+}
+
+.catch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============ Network Info ============ */
+.netinfo {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  padding: 28px 32px;
+}
+
+.netinfo-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+.netinfo-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.netinfo-row:first-of-type { border-top: none; }
+
+.netinfo-key {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.netinfo-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  word-break: break-all;
+  background: transparent;
+  color: var(--text);
+}
+
+.netinfo-method {
+  justify-self: start;
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: rgba(76, 175, 80, 0.18);
+  color: #2E7D32;
+  font-weight: 700;
+}
+
+.netinfo-status {
+  justify-self: start;
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.netinfo-status-good { background: rgba(76, 175, 80, 0.18); color: #2E7D32; }
+.netinfo-status-bad  { background: rgba(231, 76, 60, 0.18); color: #C0392B; }
+.netinfo-status-pending { background: rgba(244, 163, 0, 0.18); color: #B26B00; }
+.netinfo-status-unknown { background: rgba(0, 0, 0, 0.08); color: var(--text-dim); }
+
+/* ============ Responsive ============ */
+@media (max-width: 720px) {
+  .app { padding: 32px 16px 48px; }
+  .pkmn-stage { padding: 24px 16px; min-height: auto; }
+  .pkmn-card-image-wrap { width: 180px; height: 180px; }
+  .pkmn-card-image { width: 150px; height: 150px; }
+  .pkmn-card-name { font-size: 28px; }
+  .netinfo { padding: 20px; }
+  .netinfo-row { grid-template-columns: 1fr; gap: 4px; }
+}
