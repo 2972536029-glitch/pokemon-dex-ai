@@ -3,3 +3,9 @@ dist
 .vite
 .DS_Store
 *.log
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  

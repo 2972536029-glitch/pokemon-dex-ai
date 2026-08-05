@@ -1,6 +1,9 @@
 import { TYPE_COLORS, STAT_LABELS } from "../config/pokemon.js";
 
-const PokemonCard = ({ pokemon }) => {
+// Added `isFavorite` and `onToggleFavorite` props to support the favorites
+// feature — the heart button next to the name. The rest of the card is
+// unchanged from the starter.
+const PokemonCard = ({ pokemon, isFavorite, onToggleFavorite }) => {
   const { id, name, height, weight, types, stats } = pokemon;
   const image =
     pokemon.sprites?.other?.["official-artwork"]?.front_default ||
@@ -23,7 +26,19 @@ const PokemonCard = ({ pokemon }) => {
         )}
       </div>
 
-      <h2 className="pkmn-card-name">{name}</h2>
+      <div className="pkmn-card-name-row">
+        <h2 className="pkmn-card-name">{name}</h2>
+        <button
+          type="button"
+          className={`pkmn-fav-btn ${isFavorite ? "is-fav" : ""}`}
+          onClick={onToggleFavorite}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        >
+          {isFavorite ? "❤️" : "🤍"}
+        </button>
+      </div>
 
       <div className="pkmn-card-types">
         {types.map(({ type }) => (

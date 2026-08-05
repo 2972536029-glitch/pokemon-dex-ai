@@ -17,6 +17,19 @@
   --pikachu-yellow: #FFCB05;
 }
 
+/* Dark theme — toggled by <html data-theme="dark">. */
+:root[data-theme="dark"] {
+  --bg: #14131a;
+  --bg-card: #1f1d29;
+  --border: #3a3550;
+  --text: #f2f0ea;
+  --text-2: #b8b4c4;
+  --text-dim: #7a7590;
+  --pokeball-red: #ff5252;
+  --pokeball-red-deep: #c0392b;
+  --pikachu-yellow: #ffd54f;
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {
@@ -39,8 +52,31 @@ html, body, #root {
 }
 
 .app-header {
+  position: relative;
   text-align: center;
   margin-bottom: 32px;
+}
+
+.theme-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-card);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.theme-toggle:hover {
+  transform: rotate(20deg) scale(1.08);
 }
 
 .app-header h1 {
@@ -85,6 +121,195 @@ html, body, #root {
 }
 
 .pkmn-stage > * { position: relative; z-index: 1; }
+
+/* ============ Search box ============ */
+.pkmn-search {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  /* Lift the whole form above the card so the dropdown isn't covered.
+     (.pkmn-stage > * sets z-index:1 on every child, so we must override
+     the form itself, not a descendant — a descendant's z-index can't
+     escape this form's stacking context.) */
+  position: relative;
+  z-index: 20;
+}
+
+.pkmn-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.pkmn-suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: color-mix(in srgb, var(--bg-card) 97%, transparent);
+  backdrop-filter: blur(4px);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.pkmn-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.pkmn-suggest-item.is-active,
+.pkmn-suggest-item:hover {
+  background: rgba(255, 203, 5, 0.20);
+}
+
+.pkmn-suggest-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  min-width: 48px;
+}
+
+.pkmn-suggest-name {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+
+.pkmn-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 18px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pkmn-search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.pkmn-search-input:focus {
+  border-color: var(--pikachu-yellow);
+  box-shadow: 0 0 0 4px rgba(255, 203, 5, 0.25);
+}
+
+.pkmn-search-input.has-error {
+  border-color: #e8945a;
+}
+
+.pkmn-search-input.has-error:focus {
+  box-shadow: 0 0 0 4px rgba(232, 148, 90, 0.20);
+}
+
+/* Soft bubble hint shown under the input. Warm amber tone instead of a
+   harsh red, with a gentle fade-in. */
+.pkmn-search-error {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: max-content;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #fdeede;
+  border: 1px solid #e8945a;
+  color: #a4541d;
+  font-size: 13px;
+  font-weight: 600;
+  animation: bubble-in 0.25s ease-out;
+}
+
+:root[data-theme="dark"] .pkmn-search-error {
+  background: rgba(232, 148, 90, 0.22);
+  border-color: #c97a3e;
+  color: #f3b384;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Hold visible for 2.5s, then gently fade out over 0.6s. Total 3.1s. */
+.pkmn-search-error {
+  animation:
+    bubble-in 0.25s ease-out,
+    bubble-out 0.6s ease-in 2.5s forwards;
+}
+
+@keyframes bubble-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.pkmn-search-btn {
+  flex-shrink: 0;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.pkmn-search-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+.pkmn-search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Collapsed search: a single 🔍 icon shown after a successful search. */
+.pkmn-search-collapsed {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.pkmn-search-collapsed:hover {
+  background: var(--pikachu-yellow);
+  transform: scale(1.08);
+}
 
 .pkmn-state {
   display: flex;
@@ -192,6 +417,41 @@ html, body, #root {
   margin: 8px 0 4px;
   text-transform: capitalize;
   letter-spacing: -0.02em;
+}
+
+.pkmn-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pkmn-card-name-row .pkmn-card-name {
+  margin: 8px 0 4px;
+}
+
+.pkmn-fav-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 50%;
+  transition: transform 0.12s ease;
+}
+
+.pkmn-fav-btn:hover {
+  transform: scale(1.2);
+}
+
+.pkmn-fav-btn.is-fav {
+  animation: pop-fav 0.3s ease;
+}
+
+@keyframes pop-fav {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
 }
 
 .pkmn-card-types {
@@ -359,6 +619,217 @@ html, body, #root {
 .netinfo-status-pending { background: rgba(244, 163, 0, 0.18); color: #B26B00; }
 .netinfo-status-unknown { background: rgba(0, 0, 0, 0.08); color: var(--text-dim); }
 
+/* ============ Evolution chain ============ */
+.evo {
+  width: 100%;
+  max-width: 560px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.evo-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.evo-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.evo-stage-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.evo-arrow {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.evo-stage {
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  padding: 6px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: capitalize;
+  cursor: pointer;
+  color: var(--text-2);
+  font-family: inherit;
+  transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.evo-stage:hover {
+  background: var(--pikachu-yellow);
+  color: #1a1a1a;
+  transform: translateY(-1px);
+}
+
+.evo-stage.is-current {
+  background: var(--pokeball-red);
+  border-color: var(--pokeball-red);
+  color: white;
+  cursor: default;
+}
+
+/* ============ Prev/Next navigation ============ */
+.pkmn-deck {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
+.pkmn-nav {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.pkmn-nav:hover:not(:disabled) {
+  background: var(--pikachu-yellow);
+  color: #1a1a1a;
+  transform: scale(1.08);
+}
+
+.pkmn-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============ Favorites bar ============ */
+.favs {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  padding: 20px 24px;
+}
+
+.favs-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.favs-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.favs-count {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.favs-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.favs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.favs-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding-right: 28px;
+}
+
+.favs-chip-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 4px 4px 4px;
+  font-family: inherit;
+}
+
+.favs-chip-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.favs-chip-fallback {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.favs-chip-name {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--text);
+}
+
+.favs-chip-remove {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.favs-chip-remove:hover {
+  background: var(--pokeball-red);
+  color: white;
+}
+
 /* ============ Responsive ============ */
 @media (max-width: 720px) {
   .app { padding: 32px 16px 48px; }
@@ -368,4 +839,29 @@ html, body, #root {
   .pkmn-card-name { font-size: 28px; }
   .netinfo { padding: 20px; }
   .netinfo-row { grid-template-columns: 1fr; gap: 4px; }
+
+  /* Tighter search box: stack the button under the input on narrow screens. */
+  .pkmn-search { flex-direction: column; }
+  .pkmn-search-btn { width: 100%; }
+
+  /* Smaller nav buttons so the card keeps most of the width. */
+  .pkmn-nav { width: 36px; height: 36px; font-size: 22px; }
+
+  /* Compact favorites chips. */
+  .favs { padding: 16px; }
+  .favs-head { flex-direction: column; gap: 2px; align-items: flex-start; }
+  .favs-chip-img, .favs-chip-fallback { width: 28px; height: 28px; }
+  .favs-chip-name { font-size: 13px; }
+
+  /* Smaller evolution pills. */
+  .evo-stage { padding: 5px 12px; font-size: 13px; }
+
+  /* Theme toggle a touch smaller. */
+  .theme-toggle { width: 38px; height: 38px; font-size: 18px; }
+}
+
+@media (max-width: 380px) {
+  /* Very small phones: let the stats bars keep readable. */
+  .pkmn-stat { grid-template-columns: 56px 1fr 36px; gap: 8px; }
+  .pkmn-card-basics { gap: 20px; }
 }
