@@ -10,6 +10,7 @@ import FavoritesBar from "./components/FavoritesBar.jsx";
 import EvolutionChain from "./components/EvolutionChain.jsx";
 import { useFavorites } from "./hooks/useFavorites.js";
 import { useTheme } from "./hooks/useTheme.js";
+import ChatPanel from "./chat/ChatPanel.jsx";
 
 // Validate input before hitting the network. PokeAPI accepts a name
 // (letters, "-", ".") or an id (1..MAX_ID). Anything else is rejected
@@ -330,6 +331,10 @@ const App = () => {
           onRemove={removeFavorite}
         />
       </div>
+
+      {/* AI assistant floats above everything; it receives the pokemon
+          currently on screen so "它/这只" questions resolve to context. */}
+      <ChatPanel context={pokemon ? { name: pokemon.name, id: pokemon.id } : null} />
     </div>
   );
 };

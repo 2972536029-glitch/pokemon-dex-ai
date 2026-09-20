@@ -9,3 +9,6 @@ dist
 .edgeone/*
 .tef_dist/*
   
+# AI chat server
+.env.local
+server/dist
