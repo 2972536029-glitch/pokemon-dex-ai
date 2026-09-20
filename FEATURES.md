@@ -1,8 +1,6 @@
 # Pokédex · 宝可梦图鉴
 
-> **立即体验**:**https://pokemon-homework-yxzllsjl.edgeone.cool?eo_token=1dd4e750cbfc86da6c0bc129025eddf0&eo_time=1785930010**
->
-> ⚠️ **链接有效期约 3 小时**(EdgeOne 免费版限制)。如果打开提示 401,请重新联系我获取最新链接,或按文末"本地运行"在本地体验。
+> **在线 demo**:部署后回填链接;本地体验见文末"本地运行"。
 
 一个基于 PokeAPI 构建的交互式宝可梦图鉴。输入名字或编号就能召唤任意宝可梦,还能翻阅图鉴、追踪进化链、收藏你的最爱——像真的在用一台图鉴设备。
 
@@ -51,7 +49,7 @@
 
 ## 🚀 立即开始
 
-1. 打开 **https://pokemon-homework-yxzllsjl.edgeone.cool?eo_token=1dd4e750cbfc86da6c0bc129025eddf0&eo_time=1785930010**
+1. 打开在线 demo 链接(部署后回填)
 2. 页面会自动随机抓一只宝可梦给你
 3. 试试这些:
    - 搜 `charizard` 看喷火龙的进化链
