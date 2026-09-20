@@ -1,10 +1,10 @@
 // Minimal OpenAI-compatible streaming client for the GLM chat API.
 //
 // Why hand-rolled instead of the Vercel AI SDK / openai package?
-// - The whole point of this project is to demonstrate understanding of the
-//   agent loop. A SDK hides exactly the parts an interviewer asks about:
-//   how tool_calls stream in fragments and get assembled by index, how SSE
-//   chunks split mid-line, what finish_reason means.
+// - An SDK hides exactly the parts worth understanding: how tool_calls
+//   stream in fragments and get assembled by index, how SSE chunks split
+//   mid-line, what finish_reason means. Owning this code keeps every part
+//   of the loop explainable and debuggable.
 // - The API surface we need is ONE endpoint; the client below is ~150 lines
 //   and has zero dependencies.
 //

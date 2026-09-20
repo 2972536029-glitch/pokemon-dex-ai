@@ -10,11 +10,11 @@
 //   guard:    cross-check the final text against every tool result
 //             └─ mismatch → ONE correction round, then a visible warning
 //
-// Why hand-rolled: every interview question about "how does your agent
-// work" maps to a concrete block below. The loop is also the right place
-// to enforce the two hard limits that keep a demo honest: MAX_ROUNDS
-// (no runaway tool spirals) and the abort signal (client disconnect
-// cancels the LLM stream AND in-flight PokeAPI calls).
+// Why hand-rolled: every aspect of "how the agent works" maps to a concrete,
+// readable block below — the loop is also the right place to enforce the two
+// hard limits that keep the demo honest: MAX_ROUNDS (no runaway tool
+// spirals) and the abort signal (client disconnect cancels the LLM stream
+// AND in-flight PokeAPI calls).
 
 import { GLM_CONFIG, streamChat } from "./llm.js";
 import { streamChatMock } from "./mock.js";

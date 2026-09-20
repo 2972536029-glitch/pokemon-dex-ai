@@ -1,6 +1,6 @@
 // PokeAPI tools exposed to the model via Function Calling.
 //
-// Design principles (each is an interview talking point):
+// Design principles:
 // 1. Small argument schemas. Every argument is either a plain string or an
 //    enum — enums eliminate a whole class of hallucinated arguments ("type:
 //    'electrico'"), because the model can only pick from the listed values.
