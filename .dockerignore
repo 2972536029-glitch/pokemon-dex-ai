@@ -4,3 +4,5 @@ server/dist
 .env.local
 .env
 *.log
+api
+.vercel

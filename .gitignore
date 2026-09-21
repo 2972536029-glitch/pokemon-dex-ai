@@ -12,3 +12,4 @@ dist
 # AI chat server
 .env.local
 server/dist
+.vercel
