@@ -17,13 +17,12 @@ function fail(message: string): ToolResult {
 async function getMyCards(userId: number): Promise<ToolResult> {
   try {
     const { rows } = await q(
-      `SELECT c.id, c.name, c.rarity, c.types, c.stats, uc.count
+      `SELECT c.id, c.name, c.rarity, c.types, c.stats, c.zh_name, uc.count
        FROM user_cards uc JOIN cards c ON c.id = uc.card_id
        WHERE uc.user_id = $1 ORDER BY c.bst DESC`,
       [userId]
     );
-    // Attach the known zh alias when we have one — the model otherwise
-    // invents dubious translations ("钓鱼王"). Missing alias → english only.
+    // Official zh-Hans name from the catalog; alias map only as a fallback.
     const cards = rows.map((r: any) => ({
       ...r,
       zh_name: r.zh_name ?? EN_TO_ZH[r.name] ?? null,

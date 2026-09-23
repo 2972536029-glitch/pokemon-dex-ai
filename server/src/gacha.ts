@@ -6,6 +6,7 @@
 
 import crypto from "node:crypto";
 import { q, tx } from "./db.js";
+import { AUTH_CONSTANTS } from "./auth.js";
 
 export interface PackDef {
   id: string;
@@ -44,13 +45,14 @@ export async function dailyBonus(userId: number): Promise<{ granted: boolean; ba
       [userId]
     );
     if (r.rowCount === 0) return false;
+    const bonus = AUTH_CONSTANTS.DAILY_BONUS;
     const upd = await client.query<{ balance: number }>(
       `UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance`,
-      [50, userId]
+      [bonus, userId]
     );
     await client.query(
       `INSERT INTO wallet_tx (user_id, amount, kind, detail) VALUES ($1, $2, 'daily', '每日登录奖励')`,
-      [userId, 50]
+      [userId, bonus]
     );
     return upd.rows[0].balance;
   });
@@ -86,7 +88,7 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
   const pack = findPack(input.packId);
   if (!pack) throw new GachaError(404, "卡包不存在");
   // Idempotency keys come from the client; a malformed one can't collide or inject.
-  if (!/^[a-f0-9-]{8,64}$/i.test(input.orderId)) {
+  if (!/^[a-zA-Z0-9-]{8,64}$/.test(input.orderId)) {
     throw new GachaError(400, "invalid order id");
   }
 
@@ -108,6 +110,30 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
   const cardId = await rollCard(pack);
 
   // 3) The order: charge (optimistic lock) → record order → grant card → log.
+  // TRUE concurrent duplicate of the same orderId: the second tx hits the
+  // orders PK and rolls back (no double charge) — we then serve the winner's
+  // card as a replay instead of a raw 500 (QA-004).
+  try {
+    return await drawOnce(input, pack, cardId);
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      const winner = await q<{ card_id: number }>(
+        `SELECT card_id FROM gacha_orders WHERE order_id = $1 AND user_id = $2`,
+        [input.orderId, input.userId]
+      );
+      if (winner.rows[0]) {
+        const card = await q<any>(`SELECT id, name, rarity, types, sprite FROM cards WHERE id = $1`, [
+          winner.rows[0].card_id,
+        ]);
+        const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
+        return { card: card.rows[0], balance: bal.rows[0].balance, replay: true };
+      }
+    }
+    throw err;
+  }
+}
+
+async function drawOnce(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
   const result = await tx(async (client) => {
     const upd = await client.query<{ balance: number }>(
       `UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING balance`,

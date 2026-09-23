@@ -11,13 +11,20 @@ export default function CollectionView({ onGoLogin }) {
 
   useEffect(() => {
     if (!me) return;
+    let cancelled = false; // stale-response guard across account switches
+    setError(null);
     fetch("/api/collection")
       .then(async (r) => {
         const body = await r.json();
         if (!r.ok) throw new Error(body?.message || "加载失败");
-        setCards(body.cards);
+        if (!cancelled) setCards(body.cards);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [me]);
 
   if (!me) {

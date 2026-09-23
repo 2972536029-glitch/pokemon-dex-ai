@@ -11,7 +11,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id            BIGSERIAL PRIMARY KEY,
   username      TEXT NOT NULL UNIQUE,
-  pass_hash     TEXT NOT NULL,            -- scrypt: salt$hash (hex)
+  pass_hash     TEXT NOT NULL,            -- scrypt: salt:hash (hex)
   balance       INTEGER NOT NULL DEFAULT 300 CHECK (balance >= 0),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -52,12 +52,13 @@ CREATE TABLE IF NOT EXISTS wallet_tx (
 );
 
 CREATE TABLE IF NOT EXISTS gacha_orders (
-  order_id      TEXT PRIMARY KEY,          -- client-generated idempotency key
+  order_id      TEXT NOT NULL,             -- client-generated idempotency key
   user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   pack_id       TEXT NOT NULL,
   card_id       INTEGER NOT NULL REFERENCES cards(id),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, order_id)          -- keys are user-scoped: different
+);                                         -- users may reuse the same key
 
 CREATE TABLE IF NOT EXISTS daily_bonus (
   user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -65,9 +66,11 @@ CREATE TABLE IF NOT EXISTS daily_bonus (
   PRIMARY KEY (user_id, day)
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_cards_user ON user_cards(user_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_tx(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
--- migrations for tables created before this column existed
+-- migrations for tables created before these lines existed
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS zh_name TEXT;
+DROP INDEX IF EXISTS idx_user_cards_user; -- redundant with PK prefix (QA-012)
+ALTER TABLE gacha_orders DROP CONSTRAINT IF EXISTS gacha_orders_pkey;
+ALTER TABLE gacha_orders ADD PRIMARY KEY (user_id, order_id);

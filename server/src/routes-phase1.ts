@@ -46,7 +46,21 @@ export function mountPhase1(): express.Router {
 
   const secureCookie = process.env.NODE_ENV === "production" || process.env.HTTPS_ONLY === "1";
 
-  router.post("/api/auth/register", async (req, res) => {
+  // Every phase1 handler runs through this wrapper: unexpected errors become
+  // a generic JSON 500 (never a stack trace or driver message) while the
+  // details go to the server log (QA-009/010).
+  const wrap = (fn: (req: express.Request, res: express.Response) => Promise<void>) =>
+    (req: express.Request, res: express.Response) => {
+      fn(req, res).catch((err: unknown) => {
+        console.error(`[phase1] ${req.method} ${req.path} failed:`, err);
+        const status = (err as any)?.status ?? 500;
+        const message =
+          status >= 500 ? "服务暂时不可用,请稍后再试" : (err as Error)?.message ?? "请求失败";
+        res.status(status).json({ error: "internal", message });
+      });
+    };
+
+  router.post("/api/auth/register", wrap(async (req, res) => {
     try {
       const { username, password } = req.body ?? {};
       const user = await register(String(username ?? ""), String(password ?? ""));
@@ -54,12 +68,14 @@ export function mountPhase1(): express.Router {
       res.setHeader("Set-Cookie", sessionCookie(s.cookieValue, s.maxAgeSec, secureCookie));
       res.json({ user, signupBonus: AUTH_CONSTANTS.SIGNUP_BONUS });
     } catch (err: any) {
-      res.status(err.status ?? 500).json({ error: "register_failed", message: err.message });
+      if (err?.status) throw err; // validation / 409 carry their own message
+      console.error("[auth] register failed:", err);
+      throw Object.assign(new Error("注册失败,请稍后再试"), { status: 500 });
     }
-  });
+  }));
 
-  router.post("/api/auth/login", async (req, res) => {
-    const ip = req.ip ?? "unknown";
+  router.post("/api/auth/login", wrap(async (req, res) => {
+    const ip = Array.isArray(req.ip) ? req.ip[0] : (req.ip ?? "unknown");
     if (!loginAllowed(ip)) {
       res.status(429).json({ error: "rate_limited", message: "尝试次数过多,请 15 分钟后再试" });
       return;
@@ -71,46 +87,48 @@ export function mountPhase1(): express.Router {
       res.setHeader("Set-Cookie", sessionCookie(s.cookieValue, s.maxAgeSec, secureCookie));
       res.json({ user });
     } catch (err: any) {
-      res.status(err.status ?? 500).json({ error: "login_failed", message: err.message });
+      if (err?.status) throw err; // 401 generic / 429 rate limit
+      console.error("[auth] login failed:", err);
+      throw err; // wrap turns unknown errors into a generic 500
     }
-  });
+  }));
 
-  router.post("/api/auth/logout", async (req, res) => {
+  router.post("/api/auth/logout", wrap(async (req, res) => {
     const sid = parseSessionCookie(req);
     if (sid) await destroySession(sid);
     res.setHeader("Set-Cookie", clearSessionCookie(secureCookie));
     res.json({ ok: true });
-  });
+  }));
 
-  router.get("/api/me", async (req, res) => {
+  router.get("/api/me", wrap(async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.json({ user: null });
       return;
     }
     res.json({ user });
-  });
+  }));
 
-  router.post("/api/wallet/daily", async (req, res) => {
+  router.post("/api/wallet/daily", wrap(async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.status(401).json({ error: "unauthorized", message: "请先登录" });
       return;
     }
     res.json(await dailyBonus(user.id));
-  });
+  }));
 
-  router.get("/api/wallet/tx", async (req, res) => {
+  router.get("/api/wallet/tx", wrap(async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.status(401).json({ error: "unauthorized", message: "请先登录" });
       return;
     }
     res.json({ transactions: await walletHistory(user.id) });
-  });
+  }));
 
   // 公示接口:卡包定义 + 概率 + 池子大小,店页据此渲染概率表
-  router.get("/api/packs", async (_req, res) => {
+  router.get("/api/packs", wrap(async (_req, res) => {
     res.json({
       packs: PACKS.map((p) => ({
         id: p.id,
@@ -121,9 +139,9 @@ export function mountPhase1(): express.Router {
       dailyBonus: AUTH_CONSTANTS.DAILY_BONUS,
       signupBonus: AUTH_CONSTANTS.SIGNUP_BONUS,
     });
-  });
+  }));
 
-  router.post("/api/packs/:id/draw", async (req, res) => {
+  router.post("/api/packs/:id/draw", wrap(async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.status(401).json({ error: "unauthorized", message: "请先登录" });
@@ -131,7 +149,7 @@ export function mountPhase1(): express.Router {
     }
     try {
       const orderId = String(req.body?.orderId ?? "");
-      res.json(await drawCard({ userId: user.id, packId: req.params.id, orderId }));
+      res.json(await drawCard({ userId: user.id, packId: String(req.params.id), orderId }));
     } catch (err: any) {
       if (err instanceof GachaError) {
         res.status(err.status).json({ error: "gacha_failed", message: err.message });
@@ -140,16 +158,16 @@ export function mountPhase1(): express.Router {
       console.error("[packs] draw failed:", err);
       res.status(500).json({ error: "internal", message: "抽卡出了点问题,请重试" });
     }
-  });
+  }));
 
-  router.get("/api/collection", async (req, res) => {
+  router.get("/api/collection", wrap(async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.status(401).json({ error: "unauthorized", message: "请先登录" });
       return;
     }
     res.json({ cards: await myCollection(user.id) });
-  });
+  }));
 
   return router;
 }

@@ -44,6 +44,12 @@ const WINDOW_MS = 15 * 60 * 1000;
 
 export function loginAllowed(key: string): boolean {
   const now = Date.now();
+  // Prune expired entries on every call: keeps the map bounded at
+  // O(active-window IPs) instead of growing forever (QA-003).
+  for (const [k, v] of attempts) {
+    if (now > v.resetAt) attempts.delete(k);
+  }
+  if (attempts.size >= 10_000) attempts.clear(); // absolute safety valve
   const rec = attempts.get(key);
   if (!rec || now > rec.resetAt) {
     attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });

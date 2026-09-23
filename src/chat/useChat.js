@@ -17,6 +17,9 @@ export const TOOL_LABELS = {
   get_evolution_chain: "查进化链",
   get_type_matchup: "查克制关系",
   list_pokemon_of_type: "找候选",
+  get_my_cards: "查我的收藏",
+  get_my_wallet: "查我的钱包",
+  list_packs: "查卡包列表",
 };
 
 function toolArgsSummary(name, args) {

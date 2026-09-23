@@ -1,14 +1,10 @@
 // Pack shop: disclosed rates, coin prices, idempotent draws.
 // The buy button generates one UUID per click; a retry with the same UUID
 // replays the same card server-side instead of charging twice.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 
 const RARITY_LABEL = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" };
-
-function orderId() {
-  return crypto.randomUUID();
-}
 
 export default function PacksView() {
   const { me, refresh } = useAuth();
@@ -16,11 +12,20 @@ export default function PacksView() {
   const [drawing, setDrawing] = useState(null); // pack id being drawn
   const [result, setResult] = useState(null); // { card, replay } | { error }
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [dailyBonus, setDailyBonus] = useState(50);
+  // Idempotency key is bound to the PURCHASE INTENT, not the click: if the
+  // response is lost after the server recorded the order, retrying the same
+  // intent replays the same card instead of charging twice (QA-005).
+  const intentIds = useRef({});
 
   useEffect(() => {
     fetch("/api/packs")
       .then((r) => r.json())
-      .then(setPacks)
+      .then((body) => {
+        setPacks(body);
+        setDailyBonus(body.dailyBonus ?? 50);
+      })
       .catch(() => setPacks({ packs: [] }));
   }, []);
 
@@ -30,20 +35,25 @@ export default function PacksView() {
     setDrawing(packId);
     setResult(null);
     try {
+      // key generation inside try: on insecure contexts randomUUID can throw
+      if (!intentIds.current[packId]) intentIds.current[packId] = crypto.randomUUID();
       const res = await fetch(`/api/packs/${packId}/draw`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId: orderId() }),
+        body: JSON.stringify({ orderId: intentIds.current[packId] }),
       });
       const body = await res.json();
       if (!res.ok) {
         setResult({ error: body?.message || "抽卡失败" });
       } else {
         setResult({ card: body.card, replay: body.replay });
+        // Order settled — rotate the key so the NEXT purchase is a new order.
+        delete intentIds.current[packId];
         await refresh(); // wallet balance changed
       }
     } catch {
-      setResult({ error: "网络异常,请重试" });
+      setResult({ error: "网络异常,请重试(同一订单重试不会重复扣费)" });
+      // keep intentId: the retry after a network error must stay idempotent
     } finally {
       setBusy(false);
       setDrawing(null);
@@ -53,9 +63,14 @@ export default function PacksView() {
   async function claimDaily() {
     if (!me || busy) return;
     setBusy(true);
+    setNotice(null);
     try {
-      await fetch("/api/wallet/daily", { method: "POST" });
+      const res = await fetch("/api/wallet/daily", { method: "POST" });
+      const body = await res.json();
       await refresh();
+      setNotice(body.granted ? `已领取今日奖励 +${dailyBonus}` : "今天的奖励已经领过了,明天再来");
+    } catch {
+      setNotice("领取失败,请重试");
     } finally {
       setBusy(false);
     }
@@ -68,9 +83,14 @@ export default function PacksView() {
           我的余额:<b>{me ? `${me.balance}` : "—"}</b> 图鉴币
         </span>
         <button type="button" className="btn-ghost" onClick={claimDaily} disabled={!me || busy}>
-          每日登录奖励 +50
+          每日登录奖励 +{dailyBonus}
         </button>
       </div>
+      {notice && (
+        <p className="hint center" role="status">
+          {notice}
+        </p>
+      )}
 
       {!me && (
         <p className="hint center">登录后才能抽卡。未登录时可以浏览各卡包的概率公示。</p>
