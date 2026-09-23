@@ -1,0 +1,15 @@
+# Local development database. Production uses Neon Postgres (Vercel marketplace),
+# same SQL — DATABASE_URL decides which one db.ts connects to.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dex
+      POSTGRES_PASSWORD: dex
+      POSTGRES_DB: pokemon_dex
+    ports:
+      - "54329:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

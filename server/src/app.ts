@@ -8,23 +8,12 @@ import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.js";
 import { GLM_CONFIG } from "./llm.js";
 import { LlmError } from "./types.js";
+import { loadEnvFile } from "./env.js";
+import { mountPhase1 } from "./routes-phase1.js";
+import { userFromRequest } from "./auth.js";
+import { catalogNames } from "./cards.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Zero-dependency .env loader: reads .env.local once at boot. Existing
-// process env always wins, so real deployments can inject via Docker/K8s.
-export function loadEnvFile(file: string) {
-  try {
-    const raw = fs.readFileSync(file, "utf8");
-    for (const line of raw.split("\n")) {
-      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-      if (!m) continue;
-      if (!(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* no .env.local — fine, env vars or mock mode */
-  }
-}
 
 export function createApp() {
   loadEnvFile(path.join(__dirname, "..", "..", ".env.local"));
@@ -38,8 +27,13 @@ export function createApp() {
     res.json({ ok: true, model: isMock ? "mock" : GLM_CONFIG.model, mock: isMock });
   });
 
+  // Phase 1: accounts / wallet / packs / collection. Mounted lazily so the
+  // dex + AI chat keep working even when DATABASE_URL is absent (the router
+  // returns 503 for its own routes instead of taking the app down).
+  app.use(mountPhase1());
+
   // ---- the chat endpoint ----------------------------------------------------
-  app.post("/api/chat", (req, res) => {
+  app.post("/api/chat", async (req, res) => {
     const { messages, context } = req.body ?? {};
 
     // Input validation before touching the LLM: role whitelist, length caps.
@@ -97,7 +91,29 @@ export function createApp() {
     const history = messages.map((m: any) => ({ role: m.role, content: m.content }));
     const contextName = typeof context?.name === "string" ? context.name : null;
 
-    runAgent({ history, contextName, signal: controller.signal, emit })
+    // Logged-in user → advisor tools + ownership guard. Both DB reads are
+    // fault-tolerant on purpose: a missing/unreachable DATABASE_URL degrades
+    // the chat to the plain dex assistant instead of breaking it.
+    let userId: number | null = null;
+    let names: string[] = [];
+    try {
+      const sessionUser = await userFromRequest(req);
+      if (sessionUser) {
+        userId = sessionUser.id;
+        names = await catalogNames();
+      }
+    } catch (err) {
+      console.warn("[chat] user context unavailable, continuing anonymous:", (err as Error).message);
+    }
+
+    runAgent({
+      history,
+      contextName,
+      userId,
+      catalogNames: names,
+      signal: controller.signal,
+      emit,
+    })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return; // client went away — nothing to report
         // The user gets a friendly line; the LOG gets the truth. Without the

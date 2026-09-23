@@ -8,19 +8,22 @@
     "build": "vite build && tsc -p server/tsconfig.json",
     "preview": "vite preview",
     "dev:ai": "tsx watch server/src/index.ts",
-    "start": "node server/dist/index.js"
+    "start": "node server/dist/index.js",
+    "seed": "tsx db/seed-cards.ts"
   },
   "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.23.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "express": "^5.1.0"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.1",
     "@types/express": "^5.0.3",
     "@types/node": "^24.5.2",
+    "@types/pg": "^8.23.1",
+    "@vitejs/plugin-react": "^4.3.1",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vite": "^5.4.1"
   }
 }

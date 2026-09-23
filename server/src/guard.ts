@@ -42,6 +42,7 @@ const EN_TO_ZH: Record<string, string> = {};
 for (const [zh, en] of Object.entries(ZH_NAME_ALIASES)) {
   if (!EN_TO_ZH[en]) EN_TO_ZH[en] = zh;
 }
+export { EN_TO_ZH };
 
 // Chinese type names → PokeAPI type slugs, for parsing "火系克水系" claims.
 // A Chinese token only counts when followed by 系/属性 — otherwise "喷火龙"
@@ -226,6 +227,51 @@ export function checkAnswer(
       const t = checkTypeClaim(s, matchups);
       checked += t.checked;
       problems.push(...t.problems);
+    }
+  }
+  return { checked, problems };
+}
+
+/**
+ * Team/pack RECOMMENDATION claims: inside a recommendation sentence, every
+ * CATALOG pokemon mentioned must be one the user OWNS. The model cannot
+ * recommend a card the collection does not contain — the same mechanical
+ * honesty as the numeric guard, applied to user state.
+ *
+ * Conservative by design: only sentences with recommendation keywords are
+ * checked; only names that exist in the CATALOG can be flagged (mentions of
+ * unknown pokemon are ignored — 宁漏判不误判); matching covers the alias
+ * map, so Chinese names outside it are silently skipped.
+ */
+export function checkTeamRecommendations(
+  text: string,
+  ownedEn: Set<string>,
+  knownEn: Set<string>,
+  questionScoped = false
+): { checked: number; problems: Problem[] } {
+  if (ownedEn.size === 0 || knownEn.size === 0) return { checked: 0, problems: [] };
+  const sentences = text.split(/(?<=[。!?!\n])/).filter((s) => s.trim().length > 1);
+  let checked = 0;
+  const problems: Problem[] = [];
+  for (const s of sentences) {
+        // questionScoped: the USER asked for a team/pack recommendation, so the
+    // whole answer is a recommendation — every catalog pokemon mentioned in
+    // it must be owned. Without the question, fall back to per-sentence
+    // keywords (names and the keyword often live in different sentences).
+    if (!questionScoped && !/推荐|队伍|组队|建议|带上|首发|阵容/.test(s)) continue;
+    for (const en of knownEn) {
+      const zh = EN_TO_ZH[en];
+      const mentioned = s.toLowerCase().includes(en) || (zh && s.includes(zh));
+      if (!mentioned) continue;
+      checked++;
+      if (!ownedEn.has(en)) {
+        problems.push({
+          claim: s.trim().slice(0, 60),
+          field: `owned: ${en}`,
+          expected: "只能推荐用户收藏中拥有的卡",
+          actual: s.trim().slice(0, 40),
+        });
+      }
     }
   }
   return { checked, problems };

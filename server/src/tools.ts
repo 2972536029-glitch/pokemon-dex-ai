@@ -342,9 +342,10 @@ export async function executeTool(
   callId: string,
   name: string,
   rawArgs: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  toolset: ToolDef[] = TOOLS
 ): Promise<{ id: string; name: string; result: ToolResult }> {
-  const tool = findTool(name);
+  const tool = toolset.find((t) => t.name === name);
   if (!tool) return { id: callId, name, result: { ok: false, error: "unknown_tool", hint: `No tool named "${name}".` } };
   let args: ToolArgs;
   try {

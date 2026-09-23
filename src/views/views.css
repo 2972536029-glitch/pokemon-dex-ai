@@ -1,0 +1,316 @@
+/* Phase 1 views: topbar nav, login card, pack shop, collection grid.
+   Same theme-token approach as chat.css. Prefix: vw- */
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.topbar-nav,
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-link {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.nav-link:hover {
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text);
+}
+.nav-link.is-active {
+  color: var(--text);
+  font-weight: 700;
+  background: rgba(128, 128, 128, 0.15);
+}
+.topbar-user {
+  gap: 8px;
+}
+.user-chip {
+  font-size: 13px;
+  color: var(--text);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.user-name {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.view-narrow {
+  max-width: 420px;
+  margin: 32px auto;
+  padding: 0 12px;
+}
+.view-wide {
+  max-width: 980px;
+  margin: 24px auto;
+  padding: 0 12px;
+}
+.view-title {
+  color: var(--text);
+  margin: 4px 2px 14px;
+}
+
+.card-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.tab {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  padding: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.tab.is-active {
+  background: var(--pokeball-red);
+  border-color: var(--pokeball-red);
+  color: #fff;
+  font-weight: 700;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field span {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.field input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.field input:focus {
+  border-color: var(--pokeball-red);
+}
+
+.btn-primary {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--pokeball-red);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-ghost {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--pokeball-red);
+  color: var(--text);
+}
+.btn-ghost:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hint {
+  color: var(--text-2);
+  font-size: 13px;
+  margin: 4px 0;
+}
+.center {
+  text-align: center;
+}
+.form-error {
+  color: var(--pokeball-red-deep);
+  font-size: 13px;
+  margin: 4px 0;
+}
+:root[data-theme="dark"] .form-error {
+  color: #ff8a80;
+}
+
+/* wallet bar */
+.wallet-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+/* packs */
+.packs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.pack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pack-card h3 {
+  margin: 0;
+  color: var(--text);
+}
+.pack-price {
+  color: var(--pokeball-red);
+  font-weight: 700;
+}
+.rates-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.rates-table th,
+.rates-table td {
+  text-align: left;
+  padding: 4px 2px;
+  border-bottom: 1px dashed var(--border);
+}
+
+/* card reveal */
+.card-reveal {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--pokeball-red);
+  border-radius: 14px;
+  padding: 14px 18px;
+  animation: vw-pop 0.25s ease;
+}
+.card-reveal img {
+  width: 84px;
+  height: 84px;
+  image-rendering: pixelated;
+}
+.reveal-name {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+@keyframes vw-pop {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.rarity-badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.rarity-C {
+  background: rgba(128, 128, 128, 0.2);
+  color: var(--text-2);
+}
+.rarity-R {
+  background: rgba(41, 112, 136, 0.2);
+  color: #297088;
+}
+.rarity-UR {
+  background: linear-gradient(90deg, #d4af37, #f7d774);
+  color: #5a4500;
+}
+
+/* collection grid */
+.collection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.mini-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.rarity-border-UR {
+  border-color: #d4af37;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+}
+.mini-card img {
+  width: 72px;
+  height: 72px;
+}
+.mini-card-name {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+.mini-card-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}

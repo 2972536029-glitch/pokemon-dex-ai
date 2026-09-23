@@ -19,8 +19,9 @@
 import { GLM_CONFIG, streamChat } from "./llm.js";
 import { streamChatMock } from "./mock.js";
 import { TOOLS, executeTool } from "./tools.js";
-import { buildSheet, checkAnswer, correctionMessage } from "./guard.js";
-import type { ChatEvent, LlmMessage, ToolCallRequest, ToolLogEntry } from "./types.js";
+import { userTools } from "./tools-user.js";
+import { buildSheet, checkAnswer, checkTeamRecommendations, correctionMessage } from "./guard.js";
+import type { ChatEvent, LlmMessage, ToolCallRequest, ToolDef, ToolLogEntry } from "./types.js";
 
 // 6 rounds covers the deepest realistic chain (type matchup → candidate
 // lists → 2-3 pokemon lookups → answer). Bounded, but not starved: a team
@@ -29,7 +30,7 @@ const MAX_ROUNDS = 6;
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_TURN_LENGTH = 2_000;
 
-function systemPrompt(contextName?: string | null): string {
+function systemPrompt(contextName?: string | null, loggedIn?: boolean): string {
   return [
     "你是「宝可梦图鉴 AI 版」的图鉴助手,回答宝可梦数据、进化、属性克制类问题。",
     "硬性规则:",
@@ -39,6 +40,9 @@ function systemPrompt(contextName?: string | null): string {
     "4. 克制/组队类问题:先调 get_type_matchup 查克制关系,需要举例时再调 list_pokemon_of_type。克制结论只能来自工具返回的 damage_relations(如 water 的 takes_double_damage_from),禁止凭印象推断「谁克谁」;推荐队伍时只从 takes_double_damage_from 列出的属性、list_pokemon_of_type 返回的候选里选,不要添加记忆里的属性或宝可梦。",
     "5. 工具调用过程会在界面上单独展示,不要在正文里描述你调用了什么工具。",
     "6. 回答简洁,分点陈述,查完即答。",
+    loggedIn
+      ? "7. 当前用户已登录且拥有卡牌收藏:涉及「我的收藏/组队/卡包推荐」的问题,必须先调 get_my_cards(以及需要时 get_my_wallet、list_packs)获取用户真实数据;只能推荐收藏中拥有的卡;卡包购买建议必须引用卡包价格与公示概率,并在用户货币不足或收藏不缺该包时明确说「不建议购买」。每条推荐都要写明依据。"
+      : "",
     contextName ? `当前用户正在查看的宝可梦:${contextName}。如果问题里的"它/这只"指代不明,默认指它。` : "",
   ]
     .filter(Boolean)
@@ -60,15 +64,22 @@ function trimHistory(messages: LlmMessage[]): LlmMessage[] {
 export interface AgentOptions {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   contextName?: string | null;
+  /** Server-resolved session user — enables the private-state advisor tools. */
+  userId?: number | null;
+  /** Catalog names for the ownership guard (recommended ⊆ owned). */
+  catalogNames?: string[];
   signal: AbortSignal;
   emit: (event: ChatEvent) => void;
 }
 
 export async function runAgent(opts: AgentOptions): Promise<void> {
   const { emit, signal } = opts;
+  const loggedIn = Boolean(opts.userId);
+
+  const allTools = [...TOOLS, ...(opts.userId ? userTools(opts.userId) : [])];
 
   const llmMessages: LlmMessage[] = [
-    { role: "system", content: systemPrompt(opts.contextName) },
+    { role: "system", content: systemPrompt(opts.contextName, loggedIn) },
     ...trimHistory(
       opts.history.slice(-20).map((m) => ({
         role: m.role,
@@ -93,7 +104,7 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
     let finishReason = "";
     let calls: ToolCallRequest[] = [];
 
-    for await (const ev of stream({ messages: llmMessages, tools: TOOLS.map(toApiTool), signal })) {
+    for await (const ev of stream({ messages: llmMessages, tools: allTools.map(toApiTool), signal })) {
       if (ev.type === "text") {
         text += ev.text;
         emit({ event: "delta", data: { text: ev.text } });
@@ -127,7 +138,7 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
     // Execute all calls in parallel — independent lookups, and parallelism
     // is a free latency win for multi-pokemon comparison questions.
     const results = await Promise.all(
-      calls.map((c) => executeTool(c.id, c.function.name, c.function.arguments, signal))
+      calls.map((c) => executeTool(c.id, c.function.name, c.function.arguments, signal, allTools))
     );
 
     for (let i = 0; i < calls.length; i++) {
@@ -135,7 +146,7 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
       const { result } = results[i];
       const args = safeJson(call.function.arguments);
       toolLog.push({ tool: call.function.name, args, result });
-      const def = TOOLS.find((t) => t.name === call.function.name);
+      const def = allTools.find((t) => t.name === call.function.name);
       emit({
         event: "tool",
         data: { id: call.id, name: call.function.name, args, status: "done", summary: def ? def.summary(args, result) : "" },
@@ -166,18 +177,43 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
   // ---- hallucination guard ------------------------------------------------
   const sheet = buildSheet(toolLog);
   const firstCheck = checkAnswer(finalText, sheet.facts, sheet.typeMatchups);
-  let verify: "pass" | "corrected" | "warn" = firstCheck.problems.length === 0 ? "pass" : "warn";
-  let checkedCount = firstCheck.checked;
-  let finalProblems = firstCheck.problems.length;
+  // Recommendation-ownership check: only meaningful when the assistant read
+  // the user's collection this turn.
+  const owned = new Set<string>();
+  for (const entry of toolLog) {
+    if (entry.tool === "get_my_cards" && entry.result.ok) {
+      for (const c of ((entry.result.data as any)?.cards ?? []) as Array<{ name: string }>) {
+        owned.add(c.name);
+      }
+    }
+  }
+  const teamCheck = checkTeamRecommendations(
+    finalText,
+    owned,
+    new Set(opts.catalogNames ?? [])
+  );
+  const firstCheckTotal = {
+    checked: firstCheck.checked + teamCheck.checked,
+    problems: [...firstCheck.problems, ...teamCheck.problems],
+  };
+  let verify: "pass" | "corrected" | "warn" =
+    firstCheckTotal.problems.length === 0 ? "pass" : "warn";
+  let checkedCount = firstCheckTotal.checked;
+  let finalProblems = firstCheckTotal.problems.length;
 
-  if (firstCheck.problems.length > 0) {
+  if (firstCheckTotal.problems.length > 0) {
     emit({ event: "round", data: { round: MAX_ROUNDS, phase: "correct" } });
     // One bounded correction round, tools disabled so the model must
     // rewrite text instead of stalling on another lookup.
+    // For ownership problems the model needs the ACTUAL collection to fix
+    // itself — a bare "only recommend owned cards" gives it nothing to aim at.
+    const ownedHint =
+      owned.size > 0 ? `
+用户实际拥有的卡:${[...owned].join(", ")}。` : "";
     const correction: LlmMessage[] = [
       ...llmMessages,
       { role: "assistant", content: finalText },
-      { role: "user", content: correctionMessage(firstCheck.problems) },
+      { role: "user", content: correctionMessage(firstCheckTotal.problems) + ownedHint },
     ];
     let corrected = "";
     for await (const ev of stream({ messages: correction, signal })) {
@@ -185,19 +221,24 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
       if (signal.aborted) return;
     }
     const recheck = checkAnswer(corrected, sheet.facts, sheet.typeMatchups);
-    if (corrected.trim() && recheck.problems.length < firstCheck.problems.length) {
+    const recheckTeam = checkTeamRecommendations(corrected, owned, new Set(opts.catalogNames ?? []));
+    const recheckTotal = {
+      checked: recheck.checked + recheckTeam.checked,
+      problems: [...recheck.problems, ...recheckTeam.problems],
+    };
+    if (corrected.trim() && recheckTotal.problems.length < firstCheckTotal.problems.length) {
       // Swap the streamed answer for the corrected one in the UI.
       emit({ event: "replace", data: { text: corrected } });
       finalText = corrected;
-      checkedCount = recheck.checked;
-      finalProblems = recheck.problems.length;
-      verify = recheck.problems.length === 0 ? "corrected" : "warn";
+      checkedCount = recheckTotal.checked;
+      finalProblems = recheckTotal.problems.length;
+      verify = recheckTotal.problems.length === 0 ? "corrected" : "warn";
       if (verify === "warn") {
-        emit({ event: "delta", data: { text: warningFooter(recheck) } });
+        emit({ event: "delta", data: { text: warningFooter(recheckTotal) } });
       }
     } else {
       verify = "warn";
-      emit({ event: "delta", data: { text: warningFooter(firstCheck) } });
+      emit({ event: "delta", data: { text: warningFooter(firstCheckTotal) } });
     }
   }
 
@@ -208,7 +249,7 @@ function warningFooter(check: { checked: number; problems: unknown[] }): string 
   return `\n\n⚠️ 已核对 ${check.checked} 处数据,仍有 ${check.problems.length} 处与图鉴不符,请以图鉴卡片为准。`;
 }
 
-function toApiTool(t: (typeof TOOLS)[number]) {
+function toApiTool(t: ToolDef) {
   return { type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters } };
 }
 

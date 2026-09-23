@@ -8,3 +8,8 @@ createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>,
 );
+setTimeout(() => {
+  if (!document.title.startsWith("UNCAUGHT") && !document.title.startsWith("CAUGHT")) {
+    document.title = "RENDER TICK " + document.title;
+  }
+}, 2000);
