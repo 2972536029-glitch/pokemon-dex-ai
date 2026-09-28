@@ -115,3 +115,17 @@ export async function catalogNames(): Promise<string[]> {
   const { rows } = await q<{ name: string }>(`SELECT name FROM cards`);
   return rows.map((r) => r.name);
 }
+
+/** Fetch + upsert the gen-1 catalog (used by the seed script and the admin endpoint). */
+export async function seedCatalog(): Promise<{ seeded: number; rarity: Array<{ rarity: string; n: string }> }> {
+  const cards = await fetchCatalog();
+  if (cards.length < 100) {
+    throw new Error(`catalog fetch incomplete (${cards.length}/151)`);
+  }
+  await upsertCatalog(cards);
+  await applyRarityRanks();
+  const { rows } = await q<{ rarity: string; n: string }>(
+    `SELECT rarity, count(*)::text AS n FROM cards GROUP BY rarity ORDER BY rarity`
+  );
+  return { seeded: cards.length, rarity: rows };
+}

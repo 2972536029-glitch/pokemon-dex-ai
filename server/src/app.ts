@@ -11,7 +11,7 @@ import { LlmError } from "./types.js";
 import { loadEnvFile } from "./env.js";
 import { mountPhase1 } from "./routes-phase1.js";
 import { userFromRequest } from "./auth.js";
-import { catalogNames } from "./cards.js";
+import { catalogNames, seedCatalog } from "./cards.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +25,25 @@ export function createApp() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, model: isMock ? "mock" : GLM_CONFIG.model, mock: isMock });
+  });
+
+  // Ops: catalog seeding for fresh deployments. Key-protected (the model
+  // key doubles as the ops key); idempotent — safe to call repeatedly.
+  app.post("/api/admin/seed", async (req, res) => {
+    const key = String(req.headers["x-seed-key"] ?? "");
+    if (!GLM_CONFIG.apiKey || key !== GLM_CONFIG.apiKey) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+    try {
+      const { ensureSchema } = await import("./db.js");
+      await ensureSchema();
+      const result = await seedCatalog();
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[admin] seed failed:", err);
+      res.status(500).json({ error: "seed_failed", message: err.message });
+    }
   });
 
   // Phase 1: accounts / wallet / packs / collection. Mounted lazily so the
