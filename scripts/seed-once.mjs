@@ -1,7 +1,7 @@
 // Build-time guard: seed the card catalog into the production database if
 // (and only if) it is empty. Idempotent — repeat builds skip immediately.
 // Runs inside `vercel` builds where DATABASE_URL is available as an env var.
-import { loadEnvFile } from "../server/src/env.js";
+import { loadEnvFile } from "../server/dist/env.js";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 loadEnvFile(dirname(fileURLToPath(import.meta.url)) + "/../.env.production.local");
@@ -13,8 +13,8 @@ if (!process.env.DATABASE_URL) {
   process.exit(0);
 }
 
-const { ensureSchema, q } = await import("../server/src/db.js");
-const { seedCatalog } = await import("../server/src/cards.js");
+const { ensureSchema, q } = await import("../server/dist/db.js");
+const { seedCatalog } = await import("../server/dist/cards.js");
 
 await ensureSchema();
 const { rows } = await q(`SELECT count(*)::int AS n FROM cards`);
