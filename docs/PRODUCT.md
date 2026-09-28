@@ -106,7 +106,7 @@
 | 版本 | 内容 | 状态 |
 |---|---|---|
 | v1.0(Phase 0) | 图鉴 + AI 问答 + 幻觉校验 + 流式输出,上线 vercel.app | ✅ 已上线 |
-| v1.1(Phase 1) | 账号/钱包/卡包/收藏 + AI 推荐顾问 | ✅ 代码完成,QA 通过,待生产数据库接入后上线 |
+| v1.1(Phase 1) | 账号/钱包/卡包/收藏 + AI 推荐顾问 | ✅ 已部署(生产数据库 Neon 已接入,目录已种子) |
 | v1.2(Phase 2) | AI 对战模拟:收藏组队 vs AI,真实数值推演回合制战斗 | 设计定稿(ROADMAP),未开工 |
 | v2.0(Phase 3) | 真人对战 PvP(WebSocket) | 可选,按需启动 |
 
@@ -117,7 +117,7 @@
 ## 七、部署与运行状态
 
 - **线上环境**:Vercel(https://pokemon-dex-ai.vercel.app),GLM-4-Flash 真实模型模式
-- **生产数据库**:Neon Postgres 接入中——接入前,v1.1 的账号/卡包功能在线上返回友好提示(图鉴与 AI 问答不受影响);接入后数据即永久持久
+- **生产数据库**:Neon Postgres(区域 iad1,免费档)已接入并完成目录种子;账号/收藏/抽卡数据持久保存
 - **本地运行**:`docker compose up -d`(数据库)→ `npm run seed`(目录)→ `npm run dev:ai` + `npm run dev`;无模型 key 自动进入演示模式(工具层仍走真实 API)
 - **容器化**:`docker build` + `docker run -e GLM_API_KEY=xxx`,单进程单端口
 

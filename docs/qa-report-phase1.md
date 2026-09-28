@@ -67,7 +67,7 @@
 
 ## 6. 遗留事项(非缺陷)
 
-- [ ] 生产环境接入 Neon Postgres(Vercel 面板 3 次点击),此后 Phase 1 功能上线;未接入前线上 Phase1 路由优雅降级 503,图鉴与 AI 问答不受影响
+- [x] 生产环境已接入 Neon Postgres(2026-09-24),目录 151 张已在构建时种子;Phase 1 功能上线
 - [ ] Vercel GitHub App 安装(推送即自动部署;当前手动部署)
 - [ ] Phase 2(AI 对战模拟)按 ROADMAP 排期
 
