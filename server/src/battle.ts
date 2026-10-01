@@ -119,6 +119,8 @@ export interface BattleState {
   activeAi: number;
   turn: number;
   status: "active" | "won" | "lost";
+  /** Opponent mode: rule (zero model calls) or reasoned (model chooses + explains). */
+  mode?: "rule" | "reasoned";
   /** Persisted turn narrative (appended by the battle routes). */
   log?: LogEntry[];
 }
@@ -214,7 +216,8 @@ function applyMove(state: BattleState, actor: "user" | "ai", move: Move, events:
       else state.activeUser = next;
       const newMon = team[next];
       const nzh = newMon.zhName ? `${newMon.zhName}(${newMon.name})` : newMon.name;
-      events.push({ kind: "switch", actor: actor === "user" ? "ai" : "user", text: `对方派出了 ${nzh}!` });
+      const sender = actor === "user" ? "你" : "AI 对手";
+      events.push({ kind: "switch", actor: actor === "user" ? "ai" : "user", text: `${sender}派出了 ${nzh}!` });
     }
   }
 }

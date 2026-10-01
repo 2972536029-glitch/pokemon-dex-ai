@@ -64,10 +64,11 @@ const Shell = () => {
   const [dexContext, setDexContext] = useState(null);
   const { me } = useAuth();
 
-  // The assistant follows whoever is logged in: switching accounts mid-chat
-  // would leak user A's collection into user B's advisor answers.
+  // After login land on the dex — but never yank users off a route they
+  // chose (reload on #/battle must stay on #/battle; QA-lesson: an effect
+  // that "fixes" the hash on every me change breaks deep links).
   useEffect(() => {
-    if (me) window.location.hash = "#/dex";
+    if (me && window.location.hash === "#/login") window.location.hash = "#/dex";
   }, [me?.id]);
 
   let view;

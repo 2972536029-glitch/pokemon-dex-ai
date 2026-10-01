@@ -65,13 +65,17 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
       .catch(() => setError("加载战斗数据失败"));
   }, [me]);
 
-  async function startBattle() {
+  async function startBattle(mode) {
     if (busy) return;
     setBusy(true);
     setError(null);
     setReward(null);
     try {
-      const res = await fetch("/api/battle/start", { method: "POST" });
+      const res = await fetch("/api/battle/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
       const body = await res.json();
       if (!res.ok) {
         setError(body?.message || "开战失败");
@@ -210,11 +214,17 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         )}
 
         <div className="battle-log">
-          {log.map((e, i) => (
-            <div key={i} className={`log-line log-${e.kind}`}>
-              <span className="log-turn">T{e.turn}</span> {e.text}
-            </div>
-          ))}
+          {log.map((e, i) =>
+            e.kind === "reason" ? (
+              <div key={i} className="log-line log-reason">
+                <span className="log-turn">T{e.turn} 🤖</span> AI 行动理由:{e.text}
+              </div>
+            ) : (
+              <div key={i} className={`log-line log-${e.kind}`}>
+                <span className="log-turn">T{e.turn}</span> {e.text}
+              </div>
+            )
+          )}
         </div>
       </div>
     );
@@ -229,11 +239,18 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           <p>加载中…</p>
         ) : teamIds.length === 3 ? (
           <>
-            <p>你的编队已就绪,和 AI 对手来一场回合制对战吧。</p>
+            <p>你的编队已就绪,选择你的对手:</p>
+            <div className="mode-picker">
+              <button type="button" className="btn-primary" onClick={() => startBattle("rule")} disabled={busy}>
+                {resumed ? "继续战斗" : "规则对手"}
+                <span className="mode-sub">零消耗 · 行为可预测</span>
+              </button>
+              <button type="button" className="btn-primary" onClick={() => startBattle("reasoned")} disabled={busy}>
+                {resumed ? "继续战斗" : "AI 推演对手"}
+                <span className="mode-sub">模型选择行动并说明理由</span>
+              </button>
+            </div>
             <p className="hint">胜利奖励 +100 图鉴币;战斗由服务器权威结算,数据全部来自真实图鉴。</p>
-            <button type="button" className="btn-primary" onClick={startBattle} disabled={busy}>
-              {busy ? "准备中…" : resumed ? "继续上一次战斗" : "开始对战"}
-            </button>
           </>
         ) : (
           <>

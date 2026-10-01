@@ -153,3 +153,32 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
     throw new LlmError(502, "LLM stream ended without a finish reason");
   }
 }
+
+/** Non-streaming single completion (used by the battle advisor). */
+export async function chatComplete(
+  messages: LlmMessage[],
+  opts: { signal: AbortSignal; maxTokens?: number; temperature?: number } = { signal: new AbortController().signal }
+): Promise<string> {
+  const res = await fetch(`${GLM_CONFIG.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${GLM_CONFIG.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: GLM_CONFIG.model,
+      messages,
+      stream: false,
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.maxTokens ?? 300,
+    }),
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new LlmError(res.status, detail.slice(0, 300) || `LLM HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  const content = json?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : "";
+}

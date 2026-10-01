@@ -15,9 +15,14 @@ import {
   BattleState, BattleMon, battleMonFromCard, chooseAiAction, pickAiTeam,
   resolveTurn, Action, LogEntry,
 } from "./battle.js";
+import { chooseAiActionReasoned } from "./battle-ai.js";
 
 const BATTLE_REWARD = 100;
 const TEAM_SIZE = 3;
+
+function req_abort(_req: express.Request): AbortSignal {
+  return new AbortController().signal;
+}
 
 export function mountBattle(): express.Router {
   const router = express.Router();
@@ -76,6 +81,7 @@ export function mountBattle(): express.Router {
   // ---- start: build state from the saved team + a random AI team ------------
   router.post("/api/battle/start", wrap(async (req, res) => {
     const user = await requireUser(req);
+    const mode = req.body?.mode === "reasoned" ? "reasoned" : "rule";
     // one active battle per user: reuse instead of stacking
     const existing = await q<{ id: string; state: BattleState }>(
       `SELECT id, state FROM battles WHERE user_id = $1 AND status = 'active'
@@ -117,6 +123,7 @@ export function mountBattle(): express.Router {
       activeAi: 0,
       turn: 1,
       status: "active",
+      mode,
     };
     const id = crypto.randomUUID();
     await q(
@@ -174,19 +181,40 @@ export function mountBattle(): express.Router {
       return;
     }
 
+    // AI action: reasoned mode asks the model (bounded by a 12s timeout) and
+    // falls back to the rule strategy on ANY failure — the battle can never
+    // stall because the advisor is down.
+    let aiAction: Action | null = null;
+    let aiReason: string | null = null;
+    if (row.state.mode === "reasoned") {
+      try {
+        const chosen = await chooseAiActionReasoned(row.state, req_abort(req));
+        aiAction = chosen.action;
+        aiReason = chosen.reason;
+      } catch (err: any) {
+        console.warn("[battle] reasoned choice fell back to rules:", err?.message);
+        aiReason = "模型暂时不可用,本轮使用规则策略";
+      }
+    }
+    if (!aiAction) aiAction = chooseAiAction(row.state);
+
     const rng = { next: () => crypto.randomBytes(4).readUInt32BE(0) / 0x1_0000_0000 };
     const { state, events } = resolveTurn(
       row.state,
       action as Action,
-      chooseAiAction(row.state),
+      aiAction,
       rng
     );
     // Persist the turn narrative inside the state snapshot so a page reload
     // can still show the full battle log (state is the single source).
-    state.log = [
+    const logEntries: LogEntry[] = [
       ...((row.state.log ?? []) as LogEntry[]),
       ...events.map((e) => ({ turn: row.state.turn, kind: e.kind, actor: e.actor, text: e.text })),
     ];
+    if (aiReason) {
+      logEntries.push({ turn: row.state.turn, kind: "reason", actor: "ai", text: aiReason });
+    }
+    state.log = logEntries;
 
     let reward = 0;
     const finished = state.status !== "active";

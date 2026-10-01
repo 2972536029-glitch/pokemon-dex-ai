@@ -134,6 +134,18 @@ check("V14 投降后状态 lost", r.json?.state?.status === "lost", r.text);
 r = await req("POST", "/api/battle/start", { jar: "none" });
 check("V15 未登录开战 401", r.status === 401, r.text);
 
+// v1.2.x: reasoned mode — model chooses the AI action with a stated reason
+r = await req("POST", "/api/battle/team", { body: { cardIds: teamIds } });
+r = await req("POST", "/api/battle/start", { body: { mode: "reasoned" } });
+const reasonBattle = r.json?.battleId;
+check("R1 推演模式开战", Boolean(reasonBattle) && r.json?.state?.mode === "reasoned", r.text);
+const mvs = r.json?.state?.userTeam?.[r.json.state.activeUser]?.moves ?? [];
+r = await req("POST", `/api/battle/${reasonBattle}/turn`, { body: { action: { kind: "move", moveId: mvs[0]?.id } } });
+const reasonLine = (r.json?.state?.log ?? []).find((l) => l.kind === "reason");
+check("R2 推演回合有理由入日志", Boolean(reasonLine), JSON.stringify(r.json?.state?.log ?? r.text).slice(0, 120));
+check("R3 理由守卫/回退标注存在", reasonLine ? /守卫|规则策略|理由/.test(reasonLine.text) : false, reasonLine?.text);
+r = await req("POST", `/api/battle/${reasonBattle}/forfeit`);
+
 // ---- B5/B7/A4: failures ----
 r = await req("POST", "/api/auth/login", { body: { username: U1, password: "wrong-pass" } });
 check("B5 错误密码统一话术", r.status === 401 && r.json?.message === "用户名或密码错误", r.text);
