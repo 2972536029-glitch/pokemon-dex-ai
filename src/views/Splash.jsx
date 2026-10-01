@@ -61,7 +61,7 @@ export default function Splash({ onEnter, fading = false }) {
 
       {/* 中央:版本题 + CTA */}
       <div className="gh-center">
-        <div className="gh-version">VER 1.3 · 智能图鉴时代</div>
+        <div className="gh-version">VER 1.4 · 智能图鉴时代</div>
         <h1 className="gh-title">
           <span>梦</span>
           <span>幻</span>
