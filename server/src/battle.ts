@@ -85,6 +85,16 @@ export interface BattleMon {
   moves: Move[];
 }
 
+/** Clamp hp to [0, maxHp] for every mon. Historical battles persisted before
+ * catalog stat changes can carry hp > maxHp; sanitize on every read so the
+ * UI never shows impossible numbers (e.g. 168/166). */
+export function clampBattleState<T extends { userTeam: BattleMon[]; aiTeam: BattleMon[] }>(state: T): T {
+  for (const mon of [...state.userTeam, ...state.aiTeam]) {
+    mon.hp = Math.min(Math.max(0, mon.hp), mon.maxHp);
+  }
+  return state;
+}
+
 /** Build a battle-ready mon from a catalog card (level-50 simplification). */
 export function battleMonFromCard(card: {
   id: number; name: string; zh_name?: string | null; rarity: string;

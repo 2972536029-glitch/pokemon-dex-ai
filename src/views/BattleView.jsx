@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
-import { TYPE_COLORS } from "../config/pokemon.js";
+import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 
@@ -35,21 +35,19 @@ function Nameplate({ mon }) {
         <span>
           {mon.hp}/{mon.maxHp}
         </span>
-        <span className="plate-types">{mon.types.join(" / ")}</span>
+        <span className="plate-types">{mon.types.map(typeZh).join(" / ")}</span>
       </div>
     </div>
   );
 }
 
-/** 竞技场立绘:突进/受击动画 + 伤害数字 */
+/** 竞技场立绘:突进/受击动画 + 伤害数字 + 脚下光台(HP 只在铭牌显示,避免语义重复) */
 function ArenaMon({ mon, side, lunging, hit, popup }) {
   return (
     <div className={`arena-mon arena-${side} ${lunging ? "is-lunging" : ""} ${hit ? "is-hit" : ""}`}>
       {popup && <div className={`dmg-popup ${popup.cls}`}>{popup.text}</div>}
+      <div className="arena-platform" />
       <img className="arena-sprite" src={mon.artwork || mon.sprite} alt={mon.name} />
-      <div className="arena-hp">
-        <HpBar mon={mon} />
-      </div>
     </div>
   );
 }
@@ -221,7 +219,10 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
     return (
       <div className="view-wide battle-view">
-        <div className={`battle-arena ${finished ? "is-finished" : ""} ${s.status === "won" ? "is-won" : ""}`}>
+        <div
+          className={`battle-arena ${finished ? "is-finished" : ""} ${s.status === "won" ? "is-won" : ""} ${hitFlash ? "is-shaking" : ""}`}
+          style={{ "--tc-u": TYPE_COLORS[u.types?.[0]], "--tc-a": TYPE_COLORS[a.types?.[0]] }}
+        >
           <div className="arena-plates">
             <Nameplate mon={u} side="user" />
             <div className="turn-badge">第 {s.turn} 回合</div>
@@ -283,7 +284,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                     >
                       <span className="move-name">{m.name}</span>
                       <span className="move-meta">
-                        {m.type} · 威力{m.power} {effTag}
+                        {typeZh(m.type)} · 威力{m.power} {effTag}
                       </span>
                     </button>
                   );
@@ -351,14 +352,25 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           <>
             <div className="pregame-squad">
               {teamMons.map((c) => (
-                <div key={c.id} className="pregame-mon">
-                  <img src={artworkUrl(c.id)} alt={c.name} />
+                <div
+                  key={c.id}
+                  className="pregame-mon"
+                  style={{ "--tc": TYPE_COLORS[c.types?.[0]] }}
+                >
+                  <span className="pregame-frame">
+                    <img src={artworkUrl(c.id)} alt={c.name} />
+                  </span>
                   <span>{c.zh_name || c.name}</span>
                 </div>
               ))}
-              <div className="pregame-vs">VS</div>
+              <div className="pregame-vs">
+                <span>VS</span>
+              </div>
               <div className="pregame-mon is-mystery">
-                <span className="mystery-mark">?</span>
+                <span className="mystery-mark" aria-hidden="true">
+                  <span className="mystery-ball" />
+                  <i>?</i>
+                </span>
                 <span>AI 对手</span>
               </div>
             </div>
@@ -368,6 +380,20 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
               </button>
               <button type="button" className="btn-primary" onClick={() => startBattle("reasoned")} disabled={busy}>
                 {busy ? "准备中…" : "开始对战(AI 推演)"}
+              </button>
+            </div>
+            <div className="pregame-teamstrip">
+              <span className="ts-item">
+                队伍总 HP <b>{teamMons.reduce((n, c) => n + (c.stats?.hp ?? 0), 0)}</b>
+              </span>
+              <span className="ts-sep" aria-hidden="true" />
+              <span className="ts-item">
+                属性{" "}
+                <b>{[...new Set(teamMons.flatMap((c) => c.types ?? []))].map(typeZh).join(" / ")}</b>
+              </span>
+              <span className="ts-sep" aria-hidden="true" />
+              <button type="button" className="ts-link" onClick={onGoCollection}>
+                调整编队 →
               </button>
             </div>
             {error && (

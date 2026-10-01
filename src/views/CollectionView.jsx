@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
-import { TYPE_COLORS } from "../config/pokemon.js";
+import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 const TEAM_SIZE = 3;
@@ -141,9 +141,10 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
               key={ty}
               type="button"
               className={`filter-chip ${typeFilter === ty ? "is-on" : ""}`}
+              style={{ "--chip-c": TYPE_COLORS[ty] }}
               onClick={() => setTypeFilter(typeFilter === ty ? null : ty)}
             >
-              {ty}
+              {typeZh(ty)}
             </button>
           ))}
         </div>
@@ -171,14 +172,14 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
                 <span className="tcard-name">{c.zh_name || c.name}</span>
                 <span className="tcard-hp">{c.stats?.hp ?? "--"}</span>
               </div>
-              <div className="tcard-art">
+              <div className="tcard-art" style={{ "--tc": TYPE_COLORS[types[0]] }}>
                 <img src={artworkUrl(c.id)} alt={c.name} loading="lazy" />
               </div>
               <div className="tcard-foot">
                 <div className="tcard-types">
                   {types.map((x) => (
                     <span key={x} className="type-chip" style={{ background: TYPE_COLORS[x] ?? "#98a4b0" }}>
-                      {x}
+                      {typeZh(x)}
                     </span>
                   ))}
                 </div>

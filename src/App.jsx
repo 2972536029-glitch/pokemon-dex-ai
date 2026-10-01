@@ -7,6 +7,7 @@ import LoginView from "./views/LoginView.jsx";
 import BattleView from "./views/BattleView.jsx";
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
+import { useTheme } from "./hooks/useTheme.js";
 import "./views/splash.css";
 import "./views/views.css";
 
@@ -33,6 +34,12 @@ function Header({ route, go }) {
   );
   return (
     <header className="topbar">
+      <button type="button" className="brand" onClick={() => go("#/dex")}>
+        <span className="brand-ball" aria-hidden="true" />
+        <span className="brand-name">
+          宝可梦图鉴 <b>AI</b>
+        </span>
+      </button>
       <nav className="topbar-nav">
         {link("#/dex", "图鉴")}
         {link("#/packs", "卡包商店")}
@@ -43,10 +50,16 @@ function Header({ route, go }) {
         {me ? (
           <>
             <span className="user-chip" title="图鉴币余额">
-              🪙 {me.balance}
+              <span className="coin-ico" aria-hidden="true" />
+              {me.balance}
             </span>
-            <span className="user-name">{me.username}</span>
-            <button type="button" className="nav-link" onClick={logout}>
+            <span className="user-name">
+              <span className="avatar-bubble" aria-hidden="true">
+                {me.username.slice(0, 1).toUpperCase()}
+              </span>
+              {me.username}
+            </span>
+            <button type="button" className="nav-link ghost" onClick={logout}>
               退出
             </button>
           </>
@@ -60,6 +73,9 @@ function Header({ route, go }) {
 
 const Shell = () => {
   const route = useHashRoute();
+  // 主题必须在 App 根部应用:只挂在单个视图里时,其余视图会回退浅色
+  // (QA 实测:#/battle 准备页曾整页变白)。DexView 里的切换按钮仍独立工作。
+  useTheme();
   const go = (hash) => {
     window.location.hash = hash;
   };
@@ -86,7 +102,10 @@ const Shell = () => {
   return (
     <div className={`app-shell ${entered && splashGone ? "app-enter" : ""}`}>
       <Header route={route} go={go} />
-      {view}
+      {/* key=route:切视图时重挂载,触发 view-in 过渡动画 */}
+      <main className="view-frame" key={route}>
+        {view}
+      </main>
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
       {!splashGone && (
         <Splash

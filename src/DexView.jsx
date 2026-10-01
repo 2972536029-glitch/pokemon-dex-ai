@@ -178,18 +178,19 @@ export default function DexView({ onContextChange }) {
           type="button"
           className="theme-toggle"
           onClick={toggleTheme}
-          aria-label="Toggle theme"
+          aria-label="切换主题"
           title={
             mode === "auto"
-              ? `Auto (now ${theme}) — click for light`
+              ? `跟随系统(当前${theme === "dark" ? "深色" : "浅色"})— 点击切换浅色`
               : mode === "light"
-              ? "Light — click for dark"
-              : "Dark — click for auto"
+              ? "浅色 — 点击切换深色"
+              : "深色 — 点击恢复跟随系统"
           }
         >
           {mode === "auto" ? "🖥️" : theme === "light" ? "☀️" : "🌙"}
         </button>
-        <h1>Random Pokémon</h1>
+        <p className="app-eyebrow">POKÉMON DEX · AI</p>
+        <h1>随机图鉴</h1>
       </header>
 
       <div className="pkmn">
@@ -210,8 +211,8 @@ export default function DexView({ onContextChange }) {
                     setSearchInput(e.target.value);
                     if (searchError) setSearchError(null);
                   }}
-                  placeholder="Name or id, e.g. pikachu or 25"
-                  aria-label="Search Pokémon"
+                  placeholder="名字或编号,如 pikachu / 25"
+                  aria-label="搜索宝可梦"
                   autoComplete="off"
                 />
               <SearchSuggestions
@@ -229,7 +230,7 @@ export default function DexView({ onContextChange }) {
               type="submit"
               disabled={loading}
             >
-              {loading ? "…" : "Search"}
+              {loading ? "…" : "搜索"}
             </button>
             {searchError && (
               <p className="pkmn-search-error" role="alert">
@@ -309,10 +310,11 @@ export default function DexView({ onContextChange }) {
             onClick={catchOne}
             disabled={loading}
           >
-            {loading ? "Summoning…" : "Catch another!"}
+            {loading ? "召唤中…" : "再抽一只!"}
           </button>
         </section>
 
+        {/* 请求透明化面板:成品默认收起,带 ?debug=1 才展开(作业痕迹不进首屏) */}
         <NetworkInfo
           url={requestUrl}
           method="GET"
@@ -320,6 +322,7 @@ export default function DexView({ onContextChange }) {
           loading={loading}
           error={error}
           responseKeys={pokemon ? Object.keys(pokemon).slice(0, 8) : []}
+          debug={new URLSearchParams(window.location.search).get("debug") === "1"}
         />
 
         <FavoritesBar

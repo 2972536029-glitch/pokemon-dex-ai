@@ -113,11 +113,16 @@ export function useChat(context) {
 
         if (!res.ok || !res.body) {
           // Non-SSE failure (400/500/proxy page): surface a readable error.
-          let message = `请求失败 (HTTP ${res.status})`;
+          // 技术细节降级为轻描淡写的一句 + 人话主文案(成品观感,不过引擎在错误场景的真实性)。
+          let status = res.status;
+          let message = "图鉴走神了,请再问一次";
           try {
             const j = await res.json();
-            if (j?.message) message = j.message;
+            if (/长度|413|too large/i.test(j?.message ?? "")) {
+              message = "问题有点长,试着精简一下再问?";
+            }
           } catch {}
+          console.warn("[chat] request failed:", status);
           patchLast({ state: "error", text: message });
           return;
         }

@@ -13,7 +13,7 @@ import { userFromRequest } from "./auth.js";
 import { AUTH_CONSTANTS } from "./auth.js";
 import {
   BattleState, BattleMon, battleMonFromCard, chooseAiAction, pickAiTeam,
-  resolveTurn, Action, LogEntry,
+  resolveTurn, Action, LogEntry, clampBattleState,
 } from "./battle.js";
 import { chooseAiActionReasoned } from "./battle-ai.js";
 
@@ -93,7 +93,7 @@ export function mountBattle(): express.Router {
       [user.id]
     );
     if (existing.rows[0]) {
-      res.json({ battleId: existing.rows[0].id, state: existing.rows[0].state, resumed: true });
+      res.json({ battleId: existing.rows[0].id, state: clampBattleState(existing.rows[0].state), resumed: true });
       return;
     }
 
@@ -159,13 +159,13 @@ export function mountBattle(): express.Router {
        ORDER BY created_at DESC LIMIT 1`,
       [user.id]
     );
-    res.json(rows[0] ? { battleId: rows[0].id, state: rows[0].state } : { battleId: null });
+    res.json(rows[0] ? { battleId: rows[0].id, state: clampBattleState(rows[0].state) } : { battleId: null });
   }));
 
   router.get("/api/battle/:id/state", wrap(async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
-    res.json({ battleId: row.id, state: row.state, status: row.status });
+    res.json({ battleId: row.id, state: clampBattleState(row.state), status: row.status });
   }));
 
   // ---- turn ------------------------------------------------------------------

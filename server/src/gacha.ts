@@ -79,7 +79,7 @@ interface DrawInput {
 }
 
 export interface DrawResult {
-  card: { id: number; name: string; rarity: string; types: string[]; sprite: string | null };
+  card: { id: number; name: string; zh_name: string | null; rarity: string; types: string[]; sprite: string | null; stats: { hp: number } | null };
   balance: number;
   replay: boolean;
 }
@@ -98,7 +98,7 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
     [input.orderId, input.userId]
   );
   if (existing.rows[0]) {
-    const card = await q<any>(`SELECT id, name, rarity, types, sprite FROM cards WHERE id = $1`, [
+    const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [
       existing.rows[0].card_id,
     ]);
     const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
@@ -122,7 +122,7 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
         [input.orderId, input.userId]
       );
       if (winner.rows[0]) {
-        const card = await q<any>(`SELECT id, name, rarity, types, sprite FROM cards WHERE id = $1`, [
+        const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [
           winner.rows[0].card_id,
         ]);
         const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
@@ -158,7 +158,7 @@ async function drawOnce(input: DrawInput, pack: PackDef, cardId: number): Promis
     return upd.rows[0].balance;
   });
 
-  const card = await q<any>(`SELECT id, name, rarity, types, sprite FROM cards WHERE id = $1`, [cardId]);
+  const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [cardId]);
   return { card: card.rows[0], balance: result, replay: false };
 }
 

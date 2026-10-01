@@ -2,7 +2,14 @@ const LoadingState = () => {
   return (
     <div className="pkmn-state pkmn-loading">
       <div className="pokeball spinning" />
-      <p>A wild Pokémon is on the way…</p>
+      <p>
+        野生的宝可梦正在赶来
+        <span className="loading-dots" aria-hidden="true">
+          <i>·</i>
+          <i>·</i>
+          <i>·</i>
+        </span>
+      </p>
     </div>
   );
 };

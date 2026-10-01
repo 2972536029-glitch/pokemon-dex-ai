@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
-import { TYPE_COLORS } from "../config/pokemon.js";
+import { TYPE_COLORS, TYPE_ZH } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" };
 const RARITY_DOT = { C: "#98a4b0", R: "#2a75bb", UR: "#d4af37" };
@@ -114,7 +114,7 @@ export default function PacksView() {
   }
 
   return (
-    <div className="view-wide">
+    <div className="view-wide packs-view">
       <div className="wallet-bar">
         <span>
           我的余额:<b>{me ? `${me.balance}` : "—"}</b> 图鉴币
@@ -138,7 +138,7 @@ export default function PacksView() {
             <div key={p.id} className="card-box pack-card">
               <div className="pack-art" style={{ background: art.grad }}>
                 <div className="pack-shine" />
-                <div className="pack-ball" style={{ background: art.ball }} />
+                <div className={`pack-ball ${p.id === "legend" ? "is-legend" : ""}`} />
                 <span className="pack-tag">{p.id === "legend" ? "限定" : p.id === "advanced" ? "进阶" : "入门"}</span>
               </div>
               <div className="pack-body">
@@ -164,7 +164,7 @@ export default function PacksView() {
                 </div>
                 <button
                   type="button"
-                  className="btn-primary"
+                  className={p.id === "legend" ? "btn-gold" : "btn-primary"}
                   disabled={!me || busy}
                   onClick={() => draw(p.id)}
                 >
@@ -175,6 +175,9 @@ export default function PacksView() {
           );
         })}
       </div>
+      <p className="hint center" style={{ marginTop: 14 }}>
+        每包必得 1 张卡,概率如表所示;同一订单重试不会重复扣费。
+      </p>
 
       {result?.error && (
         <p className="form-error center" role="alert">
@@ -185,29 +188,60 @@ export default function PacksView() {
       {stage && (
         <div className={`pack-stage stage-${stage}`} role="status">
           {(stage === "pack" || stage === "burst") && (
-            <div className={`pack-visual ${stage === "burst" ? "is-burst" : "is-shaking"}`}>
+            <div
+              className={`pack-visual ${stage === "burst" ? "is-burst" : "is-shaking"}`}
+              style={{ background: (PACK_ART[drawing] ?? PACK_ART.basic).grad }}
+            >
               <div className="pack-top" />
               <div className="pack-bottom" />
               <div className="pack-btn" />
             </div>
           )}
-          {stage === "burst" && <div className="pack-flash" />}
+          {/* 放射光放在包体外面:包体 overflow:hidden 会把内嵌光芒裁掉 */}
+          {stage === "burst" && <div className="pack-rays" aria-hidden="true" />}
+          {stage === "burst" && (
+            <>
+              <div className="pack-flash" />
+              <div className="pack-shockwave" aria-hidden="true" />
+            </>
+          )}
           {stage === "reveal" && result?.card && (
-            <div className={`tcard tcard-r-${result.card.rarity} pack-reveal-card`}>
+            <div className="pack-reveal-wrap">
+              {result.card.rarity === "UR" && <div className="ur-rays" aria-hidden="true" />}
               {result.card.rarity === "UR" && <div className="ur-burst" />}
-              <div className="tcard-head" style={{ background: "linear-gradient(120deg, #2a75bb, #5fa8e0)" }}>
-                <span className="tcard-name">{result.card.zhName || result.card.name}</span>
-                <span className="tcard-hp">{result.card.stats?.hp ?? "--"}</span>
-              </div>
-              <div className="tcard-art">
-                <img src={artworkUrl(result.card.id)} alt={result.card.name} />
-              </div>
-              <div className="tcard-foot">
-                <span className={`rarity-ribbon r${result.card.rarity}`}>
-                  {RARITY_LABEL[result.card.rarity]}
-                </span>
-                {result.replay && <span className="ai-note">同一订单重放,未重复扣费</span>}
-              </div>
+              {(() => {
+                const c = result.card;
+                const g = (c.types ?? []).map((x) => TYPE_COLORS[x] ?? "#98a4b0");
+                const headBg =
+                  g.length > 1
+                    ? `linear-gradient(120deg, ${g[0]}, ${g[1]})`
+                    : `linear-gradient(120deg, ${g[0] ?? "#98a4b0"}, ${g[0] ?? "#98a4b0"}cc)`;
+                return (
+                  <div className={`tcard tcard-r-${c.rarity} pack-reveal-card`}>
+                    <div className="tcard-head" style={{ background: headBg }}>
+                      <span className="tcard-name">{c.zh_name || c.name}</span>
+                      <span className="tcard-hp">{c.stats?.hp ?? "--"}</span>
+                    </div>
+                    <div className="tcard-art" style={{ "--tc": TYPE_COLORS[c.types?.[0]] }}>
+                      <img src={artworkUrl(c.id)} alt={c.name} />
+                    </div>
+                    <div className="tcard-foot">
+                      <div className="tcard-types">
+                        {(c.types ?? []).map((x) => (
+                          <span key={x} className="type-chip" style={{ background: TYPE_COLORS[x] ?? "#98a4b0" }}>
+                            {TYPE_ZH[x] ?? x}
+                          </span>
+                        ))}
+                      </div>
+                      <span className={`rarity-ribbon r${c.rarity}`}>{RARITY_LABEL[c.rarity]}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {result.replay && <p className="hint">同一订单重放,未重复扣费</p>}
+              <button type="button" className="btn-gold pack-continue" onClick={() => setStage(null)}>
+                收下卡牌
+              </button>
             </div>
           )}
           {stage === "pack" && (
