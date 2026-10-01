@@ -6,6 +6,8 @@ import CollectionView from "./views/CollectionView.jsx";
 import LoginView from "./views/LoginView.jsx";
 import BattleView from "./views/BattleView.jsx";
 import ChatPanel from "./chat/ChatPanel.jsx";
+import Splash from "./views/Splash.jsx";
+import "./views/splash.css";
 import "./views/views.css";
 
 function useHashRoute() {
@@ -63,6 +65,16 @@ const Shell = () => {
   };
   const [dexContext, setDexContext] = useState(null);
   const { me } = useAuth();
+  const [adventureStarted, setAdventureStarted] = useState(() =>
+    Boolean(localStorage.getItem("pdx_adventure"))
+  );
+  // 登录后冒险已开始(注册/登录即视为老练训练师)
+  useEffect(() => {
+    if (me) {
+      localStorage.setItem("pdx_adventure", "1");
+      setAdventureStarted(true);
+    }
+  }, [me?.id]);
 
   // After login land on the dex — but never yank users off a route they
   // chose (reload on #/battle must stay on #/battle; QA-lesson: an effect
@@ -78,11 +90,21 @@ const Shell = () => {
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
   else view = <DexView onContextChange={setDexContext} />;
 
+  const showSplash = !adventureStarted && !me;
+
   return (
     <div className="app-shell">
       <Header route={route} go={go} />
       {view}
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
+      {showSplash && (
+        <Splash
+          onEnter={() => {
+            setAdventureStarted(true);
+            go("#/dex");
+          }}
+        />
+      )}
     </div>
   );
 };

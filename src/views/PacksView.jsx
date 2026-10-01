@@ -18,6 +18,9 @@ export default function PacksView() {
   // response is lost after the server recorded the order, retrying the same
   // intent replays the same card instead of charging twice (QA-005).
   const intentIds = useRef({});
+  // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
+  const [stage, setStage] = useState(null);
+  const skipRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/packs")
@@ -34,30 +37,57 @@ export default function PacksView() {
     setBusy(true);
     setDrawing(packId);
     setResult(null);
+    setStage("pack");
+    skipRef.current = false;
+
+    // Idempotency key bound to the purchase intent (QA-005).
     try {
-      // key generation inside try: on insecure contexts randomUUID can throw
       if (!intentIds.current[packId]) intentIds.current[packId] = crypto.randomUUID();
-      const res = await fetch(`/api/packs/${packId}/draw`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId: intentIds.current[packId] }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setResult({ error: body?.message || "抽卡失败" });
-      } else {
-        setResult({ card: body.card, replay: body.replay });
-        // Order settled — rotate the key so the NEXT purchase is a new order.
-        delete intentIds.current[packId];
-        await refresh(); // wallet balance changed
-      }
     } catch {
-      setResult({ error: "网络异常,请重试(同一订单重试不会重复扣费)" });
-      // keep intentId: the retry after a network error must stay idempotent
-    } finally {
-      setBusy(false);
-      setDrawing(null);
+      intentIds.current[packId] = `intent-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     }
+
+    // 动画编排与请求并行:先摇晃 1.5s 再炸开,请求完成 + 动画播完才揭晓
+    const choreography = (async () => {
+      await sleep(1500);
+      if (!skipRef.current) setStage("burst");
+      await sleep(500);
+      if (!skipRef.current) setStage("reveal");
+    })();
+
+    const request = (async () => {
+      try {
+        const res = await fetch(`/api/packs/${packId}/draw`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ orderId: intentIds.current[packId] }),
+        });
+        const body = await res.json();
+        if (!res.ok) return { error: body?.message || "抽卡失败" };
+        return { card: body.card, replay: body.replay };
+      } catch {
+        return { error: "网络异常,请重试(同一订单重试不会重复扣费)" };
+      }
+    })();
+
+    const [, outcome] = await Promise.all([choreography, request]);
+
+    if (outcome.error) {
+      setResult({ error: outcome.error });
+      setStage(null);
+    } else {
+      setResult(outcome);
+      setStage("reveal");
+      // Order settled — rotate the key so the NEXT purchase is a new order.
+      delete intentIds.current[packId];
+      await refresh(); // wallet balance changed
+    }
+    setBusy(false);
+    setDrawing(null);
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   async function claimDaily() {
@@ -137,18 +167,39 @@ export default function PacksView() {
         </p>
       )}
 
-      {result?.card && (
-        <div className="card-reveal" role="status">
-          <img src={result.card.sprite} alt={result.card.name} />
-          <div>
-            <div className={`rarity-badge rarity-${result.card.rarity}`}>
-              {RARITY_LABEL[result.card.rarity]}
+      {stage && (
+        <div className={`pack-stage stage-${stage}`} role="status">
+          {(stage === "pack" || stage === "burst") && (
+            <div className={`pack-visual ${stage === "burst" ? "is-burst" : "is-shaking"}`}>
+              <div className="pack-top" />
+              <div className="pack-bottom" />
+              <div className="pack-btn" />
             </div>
-            <div className="reveal-name">
-              {result.card.name}
-              {result.replay && <span className="ai-note">(同一订单重放,未重复扣费)</span>}
+          )}
+          {stage === "burst" && <div className="pack-flash" />}
+          {stage === "reveal" && result?.card && (
+            <div className={`tcard tcard-r-${result.card.rarity} pack-reveal-card`}>
+              {result.card.rarity === "UR" && <div className="ur-burst" />}
+              <div className="tcard-head" style={{ background: "linear-gradient(120deg, #2a75bb, #5fa8e0)" }}>
+                <span className="tcard-name">{result.card.zhName || result.card.name}</span>
+                <span className="tcard-hp">{result.card.stats?.hp ?? "--"}</span>
+              </div>
+              <div className="tcard-art">
+                <img src={artworkUrl(result.card.id)} alt={result.card.name} />
+              </div>
+              <div className="tcard-foot">
+                <span className={`rarity-ribbon r${result.card.rarity}`}>
+                  {RARITY_LABEL[result.card.rarity]}
+                </span>
+                {result.replay && <span className="ai-note">同一订单重放,未重复扣费</span>}
+              </div>
             </div>
-          </div>
+          )}
+          {stage === "pack" && (
+            <button type="button" className="btn-ghost pack-skip" onClick={() => (skipRef.current = true)}>
+              跳过动画 »
+            </button>
+          )}
         </div>
       )}
     </div>

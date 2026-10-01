@@ -6,28 +6,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
 
 :root {
-  --bg: #FFF8E1;
+  /* v1.3 official pokemon palette (design-v1.3.md §一) */
+  --bg: #EEF3FA;
   --bg-card: #FFFFFF;
-  --border: #F0D880;
-  --text: #1A1A1A;
-  --text-2: #4F4F4F;
-  --text-dim: #8C8C8C;
-  --pokeball-red: #EE1515;
-  --pokeball-red-deep: #C00000;
+  --bg-soft: #E3ECF7;
+  --border: #D9E2EE;
+  --text: #1F2933;
+  --text-2: #52606D;
+  --text-dim: #98A4B0;
+  --pokeball-red: #E3350D;
+  --pokeball-red-deep: #B1250A;
   --pikachu-yellow: #FFCB05;
+  --poke-blue: #2A75BB;
+  --shadow-card: 0 6px 20px rgba(31, 41, 51, 0.08);
+  --shadow-lift: 0 12px 28px rgba(31, 41, 51, 0.16);
+  --radius: 20px;
+  --radius-btn: 999px;
 }
 
-/* Dark theme — toggled by <html data-theme="dark">. */
+/* Dark theme — soft navy (Pokémon HOME style), toggled by <html data-theme="dark">. */
 :root[data-theme="dark"] {
-  --bg: #14131a;
-  --bg-card: #1f1d29;
-  --border: #3a3550;
-  --text: #f2f0ea;
-  --text-2: #b8b4c4;
-  --text-dim: #7a7590;
-  --pokeball-red: #ff5252;
-  --pokeball-red-deep: #c0392b;
-  --pikachu-yellow: #ffd54f;
+  --bg: #12141C;
+  --bg-card: #1B1F2A;
+  --bg-soft: #232936;
+  --border: #2A3040;
+  --text: #EDF2F7;
+  --text-2: #B6C2CF;
+  --text-dim: #7B8794;
+  --pokeball-red: #FF5A48;
+  --pokeball-red-deep: #E3350D;
+  --pikachu-yellow: #FFD54F;
+  --poke-blue: #5FA8E0;
+  --shadow-card: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 12px 28px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }

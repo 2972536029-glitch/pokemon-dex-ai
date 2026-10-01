@@ -3,6 +3,8 @@
 // /api/battle uses. Selection state seeds from the server-saved team.
 import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
+import { artworkUrl } from "../shared/artwork.js";
+import { TYPE_COLORS } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 const TEAM_SIZE = 3;
@@ -111,20 +113,36 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
       <div className="collection-grid">
         {(cards ?? []).map((c) => {
           const picked = team.includes(c.id);
+          const types = c.types ?? [];
+          const g = types.map((x) => TYPE_COLORS[x] ?? "#98a4b0");
+          const headBg =
+            g.length > 1
+              ? `linear-gradient(120deg, ${g[0]}, ${g[1]})`
+              : `linear-gradient(120deg, ${g[0] ?? "#98a4b0"}, ${g[0] ?? "#98a4b0"}cc)`;
           return (
             <button
               key={c.id}
               type="button"
-              className={`mini-card selectable ${picked ? "is-picked" : ""}`}
+              className={`tcard tcard-r-${c.rarity} selectable ${picked ? "is-picked" : ""}`}
               onClick={() => toggle(c.id)}
               title={picked ? "点击移出编队" : "点击编入对战队伍"}
             >
-              <img src={c.sprite} alt={c.name} loading="lazy" />
-              <div className="mini-card-name">
-                {c.zh_name ? `${c.zh_name} (${c.name})` : c.name}
+              <div className="tcard-head" style={{ background: headBg }}>
+                <span className="tcard-name">{c.zh_name || c.name}</span>
+                <span className="tcard-hp">{c.stats?.hp ?? "--"}</span>
               </div>
-              <div className="mini-card-meta">
-                <span className={`rarity-badge rarity-${c.rarity}`}>{RARITY_LABEL[c.rarity]}</span>
+              <div className="tcard-art">
+                <img src={artworkUrl(c.id)} alt={c.name} loading="lazy" />
+              </div>
+              <div className="tcard-foot">
+                <div className="tcard-types">
+                  {types.map((x) => (
+                    <span key={x} className="type-chip" style={{ background: TYPE_COLORS[x] ?? "#98a4b0" }}>
+                      {x}
+                    </span>
+                  ))}
+                </div>
+                <span className={`rarity-ribbon r${c.rarity}`}>{RARITY_LABEL[c.rarity]}</span>
                 {c.count > 1 && <span className="ai-note">×{c.count}</span>}
               </div>
               {picked && <span className="picked-tag">编队 {team.indexOf(c.id) + 1}</span>}

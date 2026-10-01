@@ -15,6 +15,8 @@ function HpBar({ mon }) {
   return (
     <div className="hp-wrap">
       <div className="hp-track">
+        {/* ghost 条延迟跟落:掉血时红条先缩,白条缓缓跟上(格斗游戏手法) */}
+        <div className="hp-ghost" style={{ width: `${pct}%` }} />
         <div className={`hp-fill ${cls}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="hp-text">
@@ -45,6 +47,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const { me, refresh } = useAuth();
   const [teamIds, setTeamIds] = useState(null);
   const [battle, setBattle] = useState(null); // { battleId, state }
+  // 回合动画编排:服务器一次返回全部事件,这里按顺序逐个播放
+  const [playing, setPlaying] = useState(false);
+  const [popup, setPopup] = useState(null); // {side, text, cls} 伤害/效果数字
+  const [lunge, setLunge] = useState(null); // "user"|"ai" 突进中
+  const [hitFlash, setHitFlash] = useState(null); // 受击抖动
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [reward, setReward] = useState(null);
@@ -103,6 +110,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         setError(body?.message || "行动失败");
         return;
       }
+      await playEvents(body.events, body.state);
       setBattle({ battleId: battle.battleId, state: body.state });
       if (body.reward > 0) {
         setReward(body.reward);
@@ -113,6 +121,51 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // ---- 回合动画编排器:逐个播放服务器事件 ----
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function playEvents(events, finalState) {
+    setPlaying(true);
+    // 播放期间的可视状态(独立副本,播完再同步真实状态)
+    const view = JSON.parse(JSON.stringify(battle.state));
+
+    for (const ev of events) {
+      if (ev.kind === "move") {
+        const actorSide = ev.actor; // "user" | "ai"
+        // 1) 攻方突进
+        setLunge(actorSide);
+        await sleep(380);
+        setLunge(null);
+        // 2) 受击方抖动 + 伤害数字
+        const defSide = actorSide === "user" ? "ai" : "user";
+        setHitFlash(defSide);
+        setPopup({
+          side: defSide,
+          text: `-${ev.damage ?? 0}`,
+          cls: ev.text.includes("效果绝佳") ? "pop-super" : ev.text.includes("没有效果") ? "pop-zero" : "pop-normal",
+        });
+        // 3) 可视 HP 扣减
+        const defIdx = defSide === "user" ? view.activeUser : view.activeAi;
+        const defMon = (defSide === "user" ? view.userTeam : view.aiTeam)[defIdx];
+        defMon.hp = Math.max(0, defMon.hp - (ev.damage ?? 0));
+        setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
+        await sleep(750);
+        setPopup(null);
+        setHitFlash(null);
+        await sleep(250);
+      } else if (ev.kind === "switch") {
+        // 换人:服务器快照已更新,直接同步 + 短暂停顿
+        setBattle({ battleId: battle.battleId, state: finalState });
+        await sleep(900);
+      } else if (ev.kind === "ko" || ev.kind === "end") {
+        setBattle({ battleId: battle.battleId, state: finalState });
+        await sleep(1000);
+      }
+    }
+    setPlaying(false);
+    setBattle({ battleId: battle.battleId, state: finalState });
   }
 
   async function forfeit() {
