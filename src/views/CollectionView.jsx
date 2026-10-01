@@ -9,6 +9,11 @@ import { TYPE_COLORS } from "../config/pokemon.js";
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 const TEAM_SIZE = 3;
 
+const TYPE_LIST = [
+  "fire", "water", "grass", "electric", "ice", "fighting", "poison", "ground",
+  "flying", "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy", "normal",
+];
+
 export default function CollectionView({ onGoLogin, onGoBattle }) {
   const { me } = useAuth();
   const [cards, setCards] = useState(null);
@@ -16,6 +21,8 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
   const [team, setTeam] = useState([]); // card ids chosen for battle
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [typeFilter, setTypeFilter] = useState(null); // null = 全部
+  const [sortBy, setSortBy] = useState("bst"); // bst | name
 
   useEffect(() => {
     if (!me) return;
@@ -84,16 +91,27 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
     );
   }
 
+  const shown = (cards ?? [])
+    .filter((c) => !typeFilter || (c.types ?? []).includes(typeFilter))
+    .sort((a, b) => (sortBy === "name" ? a.name.localeCompare(b.name) : b.bst - a.bst));
+
   return (
     <div className="view-wide">
       <h2 className="view-title">我的收藏({cards ? cards.length : "…"} 种)</h2>
       {error && <p className="form-error">{error}</p>}
 
-      <div className="team-bar">
-        <span>
-          对战编队:{team.length}/{TEAM_SIZE}
-          {saved && team.length === TEAM_SIZE && <span className="ai-note"> 已保存</span>}
-        </span>
+      <div className="team-preview">
+        <span className="team-preview-label">对战编队</span>
+        <div className="team-preview-slots">
+          {[0, 1, 2].map((i) => {
+            const c = (cards ?? []).find((x) => x.id === team[i]);
+            return (
+              <span key={i} className={`team-slot ${c ? "filled" : ""}`} title={c ? c.name : "空位"}>
+                {c ? <img src={c.sprite} alt={c.name} /> : i + 1}
+              </span>
+            );
+          })}
+        </div>
         <button
           type="button"
           className="btn-primary"
@@ -109,9 +127,31 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
         )}
       </div>
 
+      <div className="coll-toolbar">
+        <div className="filter-chips">
+          <button
+            type="button"
+            className={`filter-chip ${typeFilter === null ? "is-on" : ""}`}
+            onClick={() => setTypeFilter(null)}
+          >
+            全部
+          </button>
+          {TYPE_LIST.map((ty) => (
+            <button
+              key={ty}
+              type="button"
+              className={`filter-chip ${typeFilter === ty ? "is-on" : ""}`}
+              onClick={() => setTypeFilter(typeFilter === ty ? null : ty)}
+            >
+              {ty}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {cards && cards.length === 0 && <p className="hint center">还没有卡牌——去卡包商店抽一包吧。</p>}
       <div className="collection-grid">
-        {(cards ?? []).map((c) => {
+        {shown.map((c) => {
           const picked = team.includes(c.id);
           const types = c.types ?? [];
           const g = types.map((x) => TYPE_COLORS[x] ?? "#98a4b0");

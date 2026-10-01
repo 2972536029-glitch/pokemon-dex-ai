@@ -52,6 +52,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [popup, setPopup] = useState(null); // {side, text, cls} 伤害/效果数字
   const [lunge, setLunge] = useState(null); // "user"|"ai" 突进中
   const [hitFlash, setHitFlash] = useState(null); // 受击抖动
+  const [stageImpact, setStageImpact] = useState(false); // 受击时场地脉冲
+  const [confetti, setConfetti] = useState(false); // 胜利彩带
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [reward, setReward] = useState(null);
@@ -97,8 +99,10 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   }
 
   async function postAction(action) {
-    if (!battle || busy) return;
+    if (!battle || busy || playing) return;
     setBusy(true);
+    setPlaying(true);
+    setConfetti(false);
     try {
       const res = await fetch(`/api/battle/${battle.battleId}/turn`, {
         method: "POST",
@@ -111,9 +115,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       await playEvents(body.events, body.state);
+      await playEvents(body.events, body.state);
       setBattle({ battleId: battle.battleId, state: body.state });
       if (body.reward > 0) {
         setReward(body.reward);
+        setConfetti(true); // 胜利彩带
         await refresh(); // wallet balance changed
       }
     } catch {
@@ -141,6 +147,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         // 2) 受击方抖动 + 伤害数字
         const defSide = actorSide === "user" ? "ai" : "user";
         setHitFlash(defSide);
+        setStageImpact(true);
         setPopup({
           side: defSide,
           text: `-${ev.damage ?? 0}`,
@@ -154,6 +161,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         await sleep(750);
         setPopup(null);
         setHitFlash(null);
+        setStageImpact(false);
         await sleep(250);
       } else if (ev.kind === "switch") {
         // 换人:服务器快照已更新,直接同步 + 短暂停顿
@@ -219,7 +227,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           )}
         </h2>
 
-        <div className="battle-stage">
+        <div className={`battle-stage ${stageImpact ? "is-impact" : ""}`}>
           <ActiveMon mon={u} side="user" />
           <div className="battle-vs">VS</div>
           <ActiveMon mon={a} side="ai" />
@@ -281,11 +289,28 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
               </div>
             ) : (
               <div key={i} className={`log-line log-${e.kind}`}>
-                <span className="log-turn">T{e.turn}</span> {e.text}
+                <span className="log-turn">T{e.turn}</span>
+                <span className="log-text">{e.text}</span>
               </div>
             )
           )}
         </div>
+        {confetti && s.status === "won" && (
+          <div className="win-burst" aria-hidden="true">
+            {Array.from({ length: 60 }, (_, i) => (
+              <span
+                key={i}
+                className="confetti"
+                style={{
+                  left: `${(i * 17 + 5) % 100}%`,
+                  background: ["#ffcb05", "#e3350d", "#2a75bb", "#35c26b", "#f4f6fa"][i % 5],
+                  animationDelay: `${(i % 10) * 0.12}s`,
+                  animationDuration: `${2.2 + (i % 5) * 0.3}s`,
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   }

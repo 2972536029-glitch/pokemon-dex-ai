@@ -1,10 +1,19 @@
-// Pack shop: disclosed rates, coin prices, idempotent draws.
-// The buy button generates one UUID per click; a retry with the same UUID
-// replays the same card server-side instead of charging twice.
+// 卡包商店:概率公示、价格、幂等抽取,购买触发开包仪式动画。
+// 幂等键绑定购买意图(QA-005):响应丢失后重试同一意图不会重复扣费。
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
+import { artworkUrl } from "../shared/artwork.js";
+import { TYPE_COLORS } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" };
+const RARITY_DOT = { C: "#98a4b0", R: "#2a75bb", UR: "#d4af37" };
+
+// 每个卡包的产品化视觉
+const PACK_ART = {
+  basic: { grad: "linear-gradient(150deg, #e3350d 0%, #ff7a50 55%, #ffcb05 100%)", ball: "#ffcb05" },
+  advanced: { grad: "linear-gradient(150deg, #2a75bb 0%, #5fa8e0 55%, #d4af37 100%)", ball: "#ffcb05" },
+  legend: { grad: "linear-gradient(150deg, #431f52 0%, #7a3fa0 50%, #d4af37 100%)", ball: "#f1d475" },
+};
 
 export default function PacksView() {
   const { me, refresh } = useAuth();
@@ -14,10 +23,6 @@ export default function PacksView() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [dailyBonus, setDailyBonus] = useState(50);
-  // Idempotency key is bound to the PURCHASE INTENT, not the click: if the
-  // response is lost after the server recorded the order, retrying the same
-  // intent replays the same card instead of charging twice (QA-005).
-  const intentIds = useRef({});
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
   const [stage, setStage] = useState(null);
   const skipRef = useRef(false);
@@ -31,6 +36,8 @@ export default function PacksView() {
       })
       .catch(() => setPacks({ packs: [] }));
   }, []);
+
+  const intentIds = useRef({}); // 幂等键:绑定购买意图(QA-005)
 
   async function draw(packId) {
     if (!me || busy) return;
@@ -122,43 +129,49 @@ export default function PacksView() {
         </p>
       )}
 
-      {!me && (
-        <p className="hint center">登录后才能抽卡。未登录时可以浏览各卡包的概率公示。</p>
-      )}
+      {!me && <p className="hint center">登录后才能抽卡。未登录时可以浏览各卡包的概率公示。</p>}
 
       <div className="packs-grid">
-        {(packs?.packs ?? []).map((p) => (
-          <div key={p.id} className="card-box pack-card">
-            <h3>{p.name}</h3>
-            <div className="pack-price">{p.price} 币/包</div>
-            <table className="rates-table">
-              <thead>
-                <tr>
-                  <th>稀有度</th>
-                  <th>概率(公示)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(p.rates)
-                  .filter(([, w]) => w > 0)
-                  .map(([r, w]) => (
-                    <tr key={r}>
-                      <td>{RARITY_LABEL[r]}</td>
-                      <td>{Math.round(w * 100)}%</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={!me || busy}
-              onClick={() => draw(p.id)}
-            >
-              {drawing === p.id ? "开包中…" : me ? "购买并抽取" : "登录后可购买"}
-            </button>
-          </div>
-        ))}
+        {(packs?.packs ?? []).map((p) => {
+          const art = PACK_ART[p.id] ?? PACK_ART.basic;
+          return (
+            <div key={p.id} className="card-box pack-card">
+              <div className="pack-art" style={{ background: art.grad }}>
+                <div className="pack-ball" style={{ background: art.ball }} />
+              </div>
+              <div className="pack-body">
+                <div className="pack-name-row">
+                  <span className="pack-name">{p.name}</span>
+                  <span className="pack-price">{p.price} 币</span>
+                </div>
+                <div className="rates-list">
+                  {Object.entries(p.rates)
+                    .filter(([, w]) => w > 0)
+                    .map(([r, w]) => (
+                      <div key={r} className="rate-row">
+                        <span className="rate-label">
+                          <span className="rate-dot" style={{ background: RARITY_DOT[r] }} />
+                          {RARITY_LABEL[r]}
+                        </span>
+                        <span className="rate-track">
+                          <span className="rate-fill" style={{ width: `${w * 100}%`, background: RARITY_DOT[r] }} />
+                        </span>
+                        <span className="rate-pct">{Math.round(w * 100)}%</span>
+                      </div>
+                    ))}
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!me || busy}
+                  onClick={() => draw(p.id)}
+                >
+                  {drawing === p.id ? "开包中…" : me ? "购买并抽取" : "登录后可购买"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {result?.error && (
