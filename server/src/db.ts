@@ -23,11 +23,36 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
-export function q<T extends pg.QueryResultRow = pg.QueryResultRow>(
+const CONNECTION_ERRORS = [
+  "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND",
+  "Connection terminated", "connection timeout", "57P01", "08006",
+];
+
+function isConnectionError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  return CONNECTION_ERRORS.some(
+    (sig) => e?.code === sig || (e?.message ?? "").includes(sig)
+  );
+}
+
+/**
+ * Query with ONE automatic retry on connection-level failure. Neon (free
+ * tier) drops idle serverless connections after ~5 min; a pooled stale
+ * client fails its first query — pg evicts it and the retry lands on a
+ * fresh connection. Application-level errors (SQL, constraints) are NEVER
+ * retried.
+ */
+export async function q<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   params?: unknown[]
 ): Promise<pg.QueryResult<T>> {
-  return getPool().query<T>(text, params as unknown[]);
+  try {
+    return await getPool().query<T>(text, params as unknown[]);
+  } catch (err) {
+    if (!isConnectionError(err)) throw err;
+    console.warn("[db] connection-level failure, retrying once:", (err as Error).message);
+    return await getPool().query<T>(text, params as unknown[]);
+  }
 }
 
 /** Run fn inside a transaction; rolls back on throw. */
