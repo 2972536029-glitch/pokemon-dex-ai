@@ -260,8 +260,12 @@ export function mountBattle(): express.Router {
   router.post("/api/battle/:id/forfeit", wrap(async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
+    // Patch BOTH the column and the state snapshot's own status — the state
+    // JSONB is what GET /state returns, so updating only the column would
+    // leave a "lost" battle that still claims to be active in its snapshot.
     const upd = await q(
-      `UPDATE battles SET status = 'lost', finished_at = now()
+      `UPDATE battles SET status = 'lost', finished_at = now(),
+         state = jsonb_set(state, '{status}', '"lost"')
        WHERE id = $1 AND user_id = $2 AND status = 'active'`,
       [row.id, user.id]
     );

@@ -43,3 +43,4 @@
 | QA-026 | P3 | 后端 | battle-ai.ts:88 | `as never` 类型洗白绕过 LlmMessage 检查 | buildMessages 标注返回类型 | 已修复 |
 | QA-027 | P3 | 前端 | BattleView.jsx | resume 忽略请求的 mode(静默复用旧模式战斗) | 观察项:复用语义已由 resumed 标注 | 已记录(观察项) |
 | QA-028 | P3 | 文档 | docs/updates/v1.2-battle-sim.md | 设计稿与实现漂移(表结构/伤害声明核对/非法行动语义) | 补"实现偏差记录"节 | 已修复 |
+| QA-029 | P2 | 后端 | routes-battle.ts(QA-017 修复引入) | forfeit 只更新 status 列,漏改 state JSONB 内的 status → GET 返回 lost 战斗却自称 active(第三轮回归抓到) | jsonb_set 同步补丁 | 已修复(36/36 复验) |
