@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
+import { TYPE_COLORS } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 
@@ -276,6 +277,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                       key={m.id}
                       type="button"
                       className="move-btn"
+                      style={{ "--move-color": TYPE_COLORS[m.type] }}
                       disabled={busy || playing}
                       onClick={() => postAction({ kind: "move", moveId: m.id })}
                     >

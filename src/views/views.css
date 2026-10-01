@@ -40,7 +40,7 @@
 }
 .nav-link.is-active {
   color: var(--text);
-  background: var(--pika);
+  background: var(--pikachu-yellow);
   box-shadow: 0 3px 10px rgba(255, 203, 5, 0.35);
 }
 .user-chip {
@@ -51,7 +51,7 @@
 /* ---- 按钮体系 ---- */
 .btn-primary {
   border-radius: 999px;
-  background: linear-gradient(180deg, #ff4d2e 0%, var(--ball-red) 100%);
+  background: linear-gradient(180deg, #ff4d2e 0%, var(--pokeball-red) 100%);
   box-shadow: 0 6px 16px rgba(227, 53, 13, 0.35);
   transition:
     transform 0.15s ease,
@@ -79,7 +79,7 @@
   width: 6px;
   height: 70%;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--pika), var(--ball-red));
+  background: linear-gradient(180deg, var(--pikachu-yellow), var(--pokeball-red));
 }
 
 /* ---- 卡包产品化 ---- */
@@ -108,7 +108,7 @@
 .pack-price {
   font-size: 14px;
   font-weight: 800;
-  color: var(--ball-red);
+  color: var(--pokeball-red);
   background: rgba(227, 53, 13, 0.1);
   padding: 3px 12px;
   border-radius: 999px;
@@ -179,12 +179,12 @@
   transition: all 0.15s ease;
 }
 .filter-chip:hover {
-  border-color: var(--pika);
+  border-color: var(--pikachu-yellow);
   color: var(--text);
 }
 .filter-chip.is-on {
-  background: var(--pika);
-  border-color: var(--pika);
+  background: var(--pikachu-yellow);
+  border-color: var(--pikachu-yellow);
   color: #1f2430;
   box-shadow: 0 3px 10px rgba(255, 203, 5, 0.35);
 }
@@ -224,7 +224,7 @@
 }
 .team-slot.filled {
   border-style: solid;
-  border-color: var(--pika);
+  border-color: var(--pikachu-yellow);
   padding: 1px;
 }
 .team-slot img {
@@ -311,7 +311,7 @@
 }
 .log-line.log-ko .log-text,
 .log-line.log-end .log-text {
-  color: var(--ball-red);
+  color: var(--pokeball-red);
   font-weight: 700;
 }
 .log-reason {
@@ -371,7 +371,7 @@
   letter-spacing: 2px;
 }
 .login-brand .brand-logo b {
-  color: var(--pika);
+  color: var(--pikachu-yellow);
 }
 .login-brand h2 {
   margin: 8px 0 0;
@@ -589,7 +589,7 @@
   font-size: 13px;
   font-weight: 800;
   color: var(--text);
-  background: var(--pika);
+  background: var(--pikachu-yellow);
   padding: 6px 14px;
   border-radius: 999px;
   box-shadow: 0 3px 10px rgba(255, 203, 5, 0.35);
@@ -612,7 +612,7 @@
   align-self: center;
   font-size: 24px;
   font-weight: 900;
-  color: var(--ball-red);
+  color: var(--pokeball-red);
   text-shadow: 0 2px 10px rgba(227, 53, 13, 0.4);
 }
 .arena-mon {
@@ -749,7 +749,7 @@
   transition: border-color 0.15s ease, color 0.15s ease;
 }
 .bench-btn:hover:not(:disabled) {
-  border-color: var(--pika);
+  border-color: var(--pikachu-yellow);
   color: var(--text);
 }
 .bench-btn:disabled {
@@ -758,7 +758,7 @@
 }
 .bench-btn.is-forfeit {
   border-color: rgba(227, 53, 13, 0.4);
-  color: var(--ball-red);
+  color: var(--pokeball-red);
 }
 
 /* 战前:编队预览 */
@@ -802,7 +802,7 @@
 .pregame-vs {
   font-size: 22px;
   font-weight: 900;
-  color: var(--ball-red);
+  color: var(--pokeball-red);
 }
 .pregame-mon.is-mystery {
   color: var(--text-dim);
@@ -948,7 +948,7 @@
   margin: 6px 0;
 }
 .form-error {
-  color: var(--ball-red);
+  color: var(--pokeball-red);
   font-size: 13px;
   margin: 6px 0;
 }
@@ -991,8 +991,8 @@
   font-size: 14px;
 }
 .tab.is-active {
-  background: linear-gradient(180deg, #ff4d2e, var(--ball-red));
-  border-color: var(--ball-red);
+  background: linear-gradient(180deg, #ff4d2e, var(--pokeball-red));
+  border-color: var(--pokeball-red);
   color: #fff;
   font-weight: 700;
 }
@@ -1180,14 +1180,14 @@
 .tcard.selectable { cursor: pointer; }
 .tcard.selectable:hover { transform: translateY(-4px) scale(1.01); }
 .tcard.is-picked {
-  outline: 3px solid var(--pika);
+  outline: 3px solid var(--pikachu-yellow);
   outline-offset: 2px;
 }
 .tcard .picked-tag {
   position: absolute;
   bottom: 52px;
   left: 8px;
-  background: var(--pika);
+  background: var(--pikachu-yellow);
   color: #1f2430;
   font-size: 11px;
   font-weight: 800;
