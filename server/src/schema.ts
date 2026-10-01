@@ -1,4 +1,8 @@
--- Phase 1 schema. Idempotent (safe to re-run).
+// Database DDL, embedded as a constant: serverless bundles only trace JS,
+// so runtime file reads (fs) are unavailable — this is the standard fix for
+// the "ENOENT schema.sql on /var/task" class of failures. Idempotent DDL;
+// the migration ALTERs at the bottom make it safe to re-run on old tables.
+export const SCHEMA_DDL = `-- Phase 1 schema. Idempotent (safe to re-run).
 -- Design notes:
 -- - ownership is a SEPARATE table (user_cards), the card catalog (cards) is
 --   global and read-only — the 规范化 discipline: reference data lives once.
@@ -91,3 +95,4 @@ ALTER TABLE cards ADD COLUMN IF NOT EXISTS zh_name TEXT;
 DROP INDEX IF EXISTS idx_user_cards_user; -- redundant with PK prefix (QA-012)
 ALTER TABLE gacha_orders DROP CONSTRAINT IF EXISTS gacha_orders_pkey;
 ALTER TABLE gacha_orders ADD PRIMARY KEY (user_id, order_id);
+`;

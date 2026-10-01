@@ -3,6 +3,7 @@
 // Every DB access in the app goes through here — swapping providers never
 // touches business code (the 仓储层 discipline from the roadmap).
 import pg from "pg";
+import { SCHEMA_DDL } from "./schema.js";
 
 let pool: pg.Pool | null = null;
 
@@ -45,18 +46,10 @@ export async function tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<
   }
 }
 
-/** Apply db/schema.sql once per process (idempotent DDL). */
+/** Apply the embedded idempotent DDL once per process. */
 let migrated = false;
 export async function ensureSchema(): Promise<void> {
   if (migrated) return;
-  const { readFile } = await import("node:fs/promises");
-  const path = await import("node:path");
-  const { dirname } = await import("node:path");
-  const { fileURLToPath } = await import("node:url");
-  const here = dirname(fileURLToPath(import.meta.url));
-  // src/db.ts → ../../db/schema.sql (server/src → project root/db)
-  const schemaPath = path.join(here, "..", "..", "db", "schema.sql");
-  const ddl = await readFile(schemaPath, "utf8");
-  await getPool().query(ddl);
+  await getPool().query(SCHEMA_DDL);
   migrated = true;
 }
