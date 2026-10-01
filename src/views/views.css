@@ -673,17 +673,14 @@
   60%, 100% { background-position: -60% 0; }
 }
 
+/* 稀有度绶带:卡脚内的彩色胶囊(卡框 overflow hidden,不做飘出角标) */
 .rarity-ribbon {
-  position: absolute;
-  top: 8px;
-  right: -26px;
-  transform: rotate(38deg);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
-  padding: 3px 30px;
+  padding: 2px 10px;
+  border-radius: 999px;
   color: #fff;
   letter-spacing: 1px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 .rarity-ribbon.rC { background: #98a4b0; }
 .rarity-ribbon.rR { background: var(--poke-blue); }
@@ -698,7 +695,7 @@
 }
 .picked-tag {
   position: absolute;
-  top: 8px;
+  bottom: 56px;
   left: 8px;
   background: var(--pika);
   color: #1f2430;
@@ -706,6 +703,7 @@
   font-weight: 800;
   padding: 2px 8px;
   border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 

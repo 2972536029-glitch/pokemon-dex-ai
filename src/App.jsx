@@ -65,16 +65,8 @@ const Shell = () => {
   };
   const [dexContext, setDexContext] = useState(null);
   const { me } = useAuth();
-  const [adventureStarted, setAdventureStarted] = useState(() =>
-    Boolean(localStorage.getItem("pdx_adventure"))
-  );
-  // 登录后冒险已开始(注册/登录即视为老练训练师)
-  useEffect(() => {
-    if (me) {
-      localStorage.setItem("pdx_adventure", "1");
-      setAdventureStarted(true);
-    }
-  }, [me?.id]);
+  // 原神式开屏:每次完整加载都先进入沉浸页,点击 CTA 才进业务
+  const [entered, setEntered] = useState(false);
 
   // After login land on the dex — but never yank users off a route they
   // chose (reload on #/battle must stay on #/battle; QA-lesson: an effect
@@ -90,17 +82,15 @@ const Shell = () => {
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
   else view = <DexView onContextChange={setDexContext} />;
 
-  const showSplash = !adventureStarted && !me;
-
   return (
     <div className="app-shell">
       <Header route={route} go={go} />
       {view}
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
-      {showSplash && (
+      {!entered && (
         <Splash
           onEnter={() => {
-            setAdventureStarted(true);
+            setEntered(true);
             go("#/dex");
           }}
         />

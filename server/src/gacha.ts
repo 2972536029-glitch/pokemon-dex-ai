@@ -184,7 +184,7 @@ async function rollCard(pack: PackDef): Promise<number> {
 
 export async function myCollection(userId: number) {
   const { rows } = await q(
-    `SELECT c.id, c.name, c.rarity, c.types, c.sprite, c.bst, uc.count
+    `SELECT c.id, c.name, c.rarity, c.types, c.stats, c.zh_name, c.sprite, c.bst, uc.count
      FROM user_cards uc JOIN cards c ON c.id = uc.card_id
      WHERE uc.user_id = $1
      ORDER BY c.bst DESC`,
