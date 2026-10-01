@@ -11,8 +11,10 @@ export default function Splash({ onEnter }) {
 
   function enter() {
     if (leaving) return;
+    // 离场编排:白光先扩张覆盖全屏(0.55s),内容同步淡出,
+    // 覆盖完成后 onEnter 交给应用——应用在白幕之下无缝接手
     setLeaving(true);
-    setTimeout(onEnter, 700); // 白光收束后交给业务
+    setTimeout(onEnter, 620);
   }
 
   return (
@@ -53,6 +55,9 @@ export default function Splash({ onEnter }) {
           跳过 »
         </button>
       </div>
+
+      {/* 离场白幕:覆盖后由应用接手 */}
+      <div className="gh-whiteout" />
 
       {/* 中央:版本题 + CTA */}
       <div className="gh-center">

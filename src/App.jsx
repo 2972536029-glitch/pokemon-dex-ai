@@ -67,6 +67,7 @@ const Shell = () => {
   const { me } = useAuth();
   // 原神式开屏:每次完整加载都先进入沉浸页,点击 CTA 才进业务
   const [entered, setEntered] = useState(false);
+  const [splashGone, setSplashGone] = useState(false);
 
   // After login land on the dex — but never yank users off a route they
   // chose (reload on #/battle must stay on #/battle; QA-lesson: an effect
@@ -83,15 +84,18 @@ const Shell = () => {
   else view = <DexView onContextChange={setDexContext} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${entered && splashGone ? "app-enter" : ""}`}>
       <Header route={route} go={go} />
       {view}
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
-      {!entered && (
+      {!splashGone && (
         <Splash
           onEnter={() => {
+            // 白幕覆盖时先渲染应用(无缝),再揭幕;未登录引导去注册/登录
             setEntered(true);
-            go("#/dex");
+            if (!me) go("#/login");
+            else go("#/dex");
+            setTimeout(() => setSplashGone(true), 420);
           }}
         />
       )}
