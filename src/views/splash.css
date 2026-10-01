@@ -286,19 +286,18 @@
 }
 
 
-/* ---- 离场编排:白光覆盖 → 内容淡出 → 应用浮现 ---- */
+/* ---- 离场编排:白光覆盖 → 交棒 → 白幕淡出揭开应用 ---- */
 .gh-whiteout {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at 50% 55%, #fff 0%, #eaf1fb 60%, #dfe9f5 100%);
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.8s ease 0.15s; /* onEnter 后才开始淡出 */
 }
 .gh-splash.is-leaving .gh-whiteout {
-  animation: gh-cover 0.55s ease forwards;
-}
-@keyframes gh-cover {
-  to { opacity: 1; }
+  opacity: 1;
+  transition: opacity 0.5s ease;
 }
 .gh-splash.is-leaving .gh-center,
 .gh-splash.is-leaving .gh-topbar,
@@ -309,6 +308,12 @@
 }
 @keyframes gh-content-out {
   to { opacity: 0; transform: translateY(-10px); }
+}
+/* 白幕淡出:应用已在下方完成入场,交叉显影 */
+.gh-splash.is-fading {
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
 }
 
 /* 应用入场(白幕揭开时) */

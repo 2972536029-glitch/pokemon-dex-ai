@@ -137,7 +137,9 @@ export default function PacksView() {
           return (
             <div key={p.id} className="card-box pack-card">
               <div className="pack-art" style={{ background: art.grad }}>
+                <div className="pack-shine" />
                 <div className="pack-ball" style={{ background: art.ball }} />
+                <span className="pack-tag">{p.id === "legend" ? "限定" : p.id === "advanced" ? "进阶" : "入门"}</span>
               </div>
               <div className="pack-body">
                 <div className="pack-name-row">

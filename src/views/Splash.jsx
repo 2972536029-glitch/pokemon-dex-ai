@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { artworkUrl } from "../shared/artwork.js";
 import "./splash.css";
 
-export default function Splash({ onEnter }) {
+export default function Splash({ onEnter, fading = false }) {
   const [leaving, setLeaving] = useState(false);
 
   function enter() {
@@ -18,7 +18,7 @@ export default function Splash({ onEnter }) {
   }
 
   return (
-    <div className={`gh-splash ${leaving ? "is-leaving" : ""}`} role="dialog" aria-label="欢迎来到宝可梦图鉴 AI">
+    <div className={`gh-splash ${leaving ? "is-leaving" : ""} ${fading ? "is-fading" : ""}`} role="dialog" aria-label="欢迎来到宝可梦图鉴 AI">
       {/* 天空:暮色渐变 + 月亮 + 星辰 */}
       <div className="gh-sky">
         <div className="gh-moon" />

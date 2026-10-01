@@ -90,12 +90,13 @@ const Shell = () => {
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
       {!splashGone && (
         <Splash
+          fading={entered}
           onEnter={() => {
-            // 白幕覆盖时先渲染应用(无缝),再揭幕;未登录引导去注册/登录
+            // 白幕覆盖完成后调用:应用已在下方入场,白幕再缓缓揭开
             setEntered(true);
             if (!me) go("#/login");
             else go("#/dex");
-            setTimeout(() => setSplashGone(true), 420);
+            setTimeout(() => setSplashGone(true), 950);
           }}
         />
       )}
