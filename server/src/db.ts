@@ -10,10 +10,13 @@ export function getPool(): pg.Pool {
   if (!pool) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not configured");
+    const isLocal = /localhost|127\.0\.0\.1/.test(url);
     pool = new pg.Pool({
       connectionString: url,
       max: 3, // serverless: keep per-instance connections tiny
       idleTimeoutMillis: 15_000,
+      // Neon and every managed Postgres require TLS; local Docker does not.
+      ssl: isLocal ? false : { rejectUnauthorized: false },
     });
   }
   return pool;

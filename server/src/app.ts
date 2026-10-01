@@ -24,8 +24,24 @@ export function createApp() {
 
   const isMock = process.env.MOCK_LLM === "1" || !GLM_CONFIG.apiKey;
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, model: isMock ? "mock" : GLM_CONFIG.model, mock: isMock });
+  app.get("/api/health", async (_req, res) => {
+    let db = "ok";
+    let dbError: string | null = null;
+    try {
+      const { ensureSchema } = await import("./db.js");
+      await ensureSchema();
+      await (await import("./db.js")).q(`SELECT 1`);
+    } catch (err: any) {
+      db = "error";
+      dbError = (err?.message || "unknown").slice(0, 200);
+    }
+    res.json({
+      ok: true,
+      model: isMock ? "mock" : GLM_CONFIG.model,
+      mock: isMock,
+      db,
+      ...(dbError ? { dbError } : {}),
+    });
   });
 
   // Ops: catalog seeding for fresh deployments. Key-protected (the model
