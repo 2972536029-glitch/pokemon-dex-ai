@@ -26,22 +26,18 @@ import { GachaError, PACKS, dailyBonus, drawCard, myCollection, walletHistory } 
 export function mountPhase1(): express.Router {
   const router = express.Router();
 
-  let schemaError: Error | null = null;
-  const ready = ensureSchema().catch((err: Error) => {
-    schemaError = err;
-    console.error("[phase1] schema init failed — phase1 routes will 503:", err.message);
-  });
-
-  const gate = (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    ready.then(() => next());
-  };
-  router.use(["/api/auth", "/api/me", "/api/wallet", "/api/packs", "/api/collection"], gate);
-  router.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (schemaError && req.path.startsWith("/api/")) {
-      res.status(503).json({ error: "db_unavailable", message: "数据库未配置,Phase 1 功能暂不可用" });
-      return;
+  // Schema gate: retries until the DB is reachable. A transient failure
+  // (Neon cold start) must NEVER permanently poison the router — the old
+  // cached-failure design turned one cold-start blip into endless 503s even
+  // after the database recovered.
+  router.use(["/api/auth", "/api/me", "/api/wallet", "/api/packs", "/api/collection"], async (req, res, next) => {
+    try {
+      await ensureSchema();
+      next();
+    } catch (err: any) {
+      console.error("[phase1] schema unavailable:", err?.message);
+      res.status(503).json({ error: "db_unavailable", message: "数据库暂时不可用,请几秒后重试" });
     }
-    next();
   });
 
   const secureCookie = process.env.NODE_ENV === "production" || process.env.HTTPS_ONLY === "1";

@@ -71,10 +71,26 @@ export async function tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<
   }
 }
 
-/** Apply the embedded idempotent DDL once per process. */
+/**
+ * Apply the embedded idempotent DDL once per process.
+ * A cold start can race Neon's compute resume — the first DDL attempt may
+ * fail transiently. Retry up to 3 times; only SUCCESS is memoized (a failed
+ * attempt must never poison later requests).
+ */
 let migrated = false;
 export async function ensureSchema(): Promise<void> {
   if (migrated) return;
-  await getPool().query(SCHEMA_DDL);
-  migrated = true;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await getPool().query(SCHEMA_DDL);
+      migrated = true;
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.error(`[db] schema attempt ${attempt}/3 failed:`, (err as Error).message);
+      await new Promise((r) => setTimeout(r, attempt * 700));
+    }
+  }
+  throw lastErr;
 }
