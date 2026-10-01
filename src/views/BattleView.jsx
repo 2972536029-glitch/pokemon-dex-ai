@@ -1,8 +1,8 @@
-// Battle view: squad check → start → turn-based battle vs the rule-mode AI.
-// The server owns all math; this component only renders state snapshots and
-// posts actions (server-authoritative design).
+// 对战竞技场:服务器权威结算,前端只渲染状态快照与按序播放的事件动画。
+// 结构:编队检查 → 开战(选对手模式) → 竞技场(铭牌/立绘对峙/招式坞/日志)。
 import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
+import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
 
 const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
@@ -13,47 +13,94 @@ function HpBar({ mon }) {
   const pct = Math.max(0, Math.round((mon.hp / mon.maxHp) * 100));
   const cls = pct > 50 ? "hp-hi" : pct > 20 ? "hp-mid" : "hp-lo";
   return (
-    <div className="hp-wrap">
-      <div className="hp-track">
-        {/* ghost 条延迟跟落:掉血时红条先缩,白条缓缓跟上(格斗游戏手法) */}
-        <div className="hp-ghost" style={{ width: `${pct}%` }} />
-        <div className={`hp-fill ${cls}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="hp-text">
-        {mon.hp}/{mon.maxHp}
-      </span>
+    <div className="hp-track">
+      <div className="hp-ghost" style={{ width: `${pct}%` }} />
+      <div className={`hp-fill ${cls}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
 
-const ActiveMon = ({ mon, side }) => (
-  <div className={`battle-mon battle-${side}`}>
-    <img src={mon.sprite} alt={mon.name} />
-    <div className="battle-mon-name">
-      {displayName(mon)} <span className={`rarity-badge rarity-${mon.rarity}`}>{RARITY_LABEL[mon.rarity] || mon.rarity}</span>
-    </div>
-    <HpBar mon={mon} />
-    <div className="battle-types">
-      {mon.types.map((t) => (
-        <span key={t} className="type-chip">
-          {t}
+/** 游戏式血条铭牌:名字 + 等级感 + HP 双层条 */
+function Nameplate({ mon, side }) {
+  return (
+    <div className={`plate plate-${side}`}>
+      <div className="plate-row">
+        <span className="plate-name">{displayName(mon)}</span>
+        <span className={`rarity-badge rarity-${mon.rarity}`}>{RARITY_LABEL[mon.rarity] || mon.rarity}</span>
+      </div>
+      <HpBar mon={mon} />
+      <div className="plate-nums">
+        <span>
+          {mon.hp}/{mon.maxHp}
         </span>
-      ))}
+        <span className="plate-types">{mon.types.join(" / ")}</span>
+      </div>
     </div>
-  </div>
-);
+  );
+}
+
+/** 竞技场立绘:突进/受击动画 + 伤害数字 */
+function ArenaMon({ mon, side, lunging, hit, popup }) {
+  return (
+    <div className={`arena-mon arena-${side} ${lunging ? "is-lunging" : ""} ${hit ? "is-hit" : ""}`}>
+      {popup && <div className={`dmg-popup ${popup.cls}`}>{popup.text}</div>}
+      <div className="arena-platform" />
+      <img className="arena-sprite" src={mon.artwork || mon.sprite} alt={mon.name} />
+      <div className="arena-hp">
+        <HpBar mon={mon} />
+      </div>
+    </div>
+  );
+}
 
 export default function BattleView({ onGoLogin, onGoCollection }) {
   const { me, refresh } = useAuth();
+  // ---- 回合动画编排器:逐个播放服务器事件 ----
+  async function playEvents(events, finalState) {
+    setPlaying(true);
+    const view = JSON.parse(JSON.stringify(battle.state));
+
+    for (const ev of events) {
+      if (ev.kind === "move") {
+        const actorSide = ev.actor;
+        setLunge(actorSide);
+        await sleep(380);
+        setLunge(null);
+        const defSide = actorSide === "user" ? "ai" : "user";
+        setHitFlash(defSide);
+        setStageImpact(true);
+        setPopup({
+          side: defSide,
+          text: `-${ev.damage ?? 0}`,
+          cls: ev.text.includes("效果绝佳") ? "pop-super" : ev.text.includes("没有效果") ? "pop-zero" : "pop-normal",
+        });
+        const defIdx = defSide === "user" ? view.activeUser : view.activeAi;
+        const defMon = (defSide === "user" ? view.userTeam : view.aiTeam)[defIdx];
+        defMon.hp = Math.max(0, defMon.hp - (ev.damage ?? 0));
+        setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
+        await sleep(750);
+        setPopup(null);
+        setHitFlash(null);
+        setStageImpact(false);
+        await sleep(250);
+      } else {
+        setBattle({ battleId: battle.battleId, state: finalState });
+        await sleep(900);
+      }
+    }
+    setPlaying(false);
+    setBattle({ battleId: battle.battleId, state: finalState });
+  }
   const [teamIds, setTeamIds] = useState(null);
+  const [teamMons, setTeamMons] = useState([]); // 编队预览数据
   const [battle, setBattle] = useState(null); // { battleId, state }
   // 回合动画编排:服务器一次返回全部事件,这里按顺序逐个播放
   const [playing, setPlaying] = useState(false);
-  const [popup, setPopup] = useState(null); // {side, text, cls} 伤害/效果数字
-  const [lunge, setLunge] = useState(null); // "user"|"ai" 突进中
-  const [hitFlash, setHitFlash] = useState(null); // 受击抖动
-  const [stageImpact, setStageImpact] = useState(false); // 受击时场地脉冲
-  const [confetti, setConfetti] = useState(false); // 胜利彩带
+  const [popup, setPopup] = useState(null); // {side, text, cls}
+  const [lunge, setLunge] = useState(null);
+  const [hitFlash, setHitFlash] = useState(null);
+  const [stageImpact, setStageImpact] = useState(false);
+  const [confetti, setConfetti] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [reward, setReward] = useState(null);
@@ -61,11 +108,14 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
   useEffect(() => {
     if (!me) return;
-    Promise.all([fetch("/api/battle/team"), fetch("/api/battle/active")])
-      .then(async ([tRes, aRes]) => {
+    Promise.all([fetch("/api/battle/team"), fetch("/api/battle/active"), fetch("/api/collection")])
+      .then(async ([tRes, aRes, cRes]) => {
         const tBody = await tRes.json();
         const aBody = await aRes.json();
+        const cBody = await cRes.json();
         setTeamIds(tBody.cardIds ?? []);
+        const ids = new Set(tBody.cardIds ?? []);
+        setTeamMons((cBody.cards ?? []).filter((c) => ids.has(c.id)));
         if (aBody.battleId && aBody.state?.status === "active") {
           setBattle(aBody);
           setResumed(true);
@@ -91,12 +141,12 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       setBattle({ battleId: body.battleId, state: body.state });
-    } catch {
-      setError("网络异常,请重试");
     } finally {
       setBusy(false);
     }
   }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   async function postAction(action) {
     if (!battle || busy || playing) return;
@@ -115,11 +165,10 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       await playEvents(body.events, body.state);
-      await playEvents(body.events, body.state);
       setBattle({ battleId: battle.battleId, state: body.state });
       if (body.reward > 0) {
         setReward(body.reward);
-        setConfetti(true); // 胜利彩带
+        setConfetti(true);
         await refresh(); // wallet balance changed
       }
     } catch {
@@ -130,21 +179,16 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   }
 
   // ---- 回合动画编排器:逐个播放服务器事件 ----
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
   async function playEvents(events, finalState) {
     setPlaying(true);
-    // 播放期间的可视状态(独立副本,播完再同步真实状态)
     const view = JSON.parse(JSON.stringify(battle.state));
 
     for (const ev of events) {
       if (ev.kind === "move") {
-        const actorSide = ev.actor; // "user" | "ai"
-        // 1) 攻方突进
+        const actorSide = ev.actor;
         setLunge(actorSide);
         await sleep(380);
         setLunge(null);
-        // 2) 受击方抖动 + 伤害数字
         const defSide = actorSide === "user" ? "ai" : "user";
         setHitFlash(defSide);
         setStageImpact(true);
@@ -153,7 +197,6 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           text: `-${ev.damage ?? 0}`,
           cls: ev.text.includes("效果绝佳") ? "pop-super" : ev.text.includes("没有效果") ? "pop-zero" : "pop-normal",
         });
-        // 3) 可视 HP 扣减
         const defIdx = defSide === "user" ? view.activeUser : view.activeAi;
         const defMon = (defSide === "user" ? view.userTeam : view.aiTeam)[defIdx];
         defMon.hp = Math.max(0, defMon.hp - (ev.damage ?? 0));
@@ -163,33 +206,17 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         setHitFlash(null);
         setStageImpact(false);
         await sleep(250);
-      } else if (ev.kind === "switch") {
-        // 换人:服务器快照已更新,直接同步 + 短暂停顿
+      } else {
+        // ko / switch / end / info:直接同步最终状态(补位动画由 CSS 呈现)
         setBattle({ battleId: battle.battleId, state: finalState });
         await sleep(900);
-      } else if (ev.kind === "ko" || ev.kind === "end") {
-        setBattle({ battleId: battle.battleId, state: finalState });
-        await sleep(1000);
       }
     }
     setPlaying(false);
     setBattle({ battleId: battle.battleId, state: finalState });
   }
 
-  async function forfeit() {
-    if (!battle || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
-      if (res.ok) setBattle({ ...battle, state: { ...battle.state, status: "lost" } });
-      else setError("投降失败,请重试");
-    } catch {
-      setError("网络异常,请重试");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  // ---- 未登录 ----
   if (!me) {
     return (
       <div className="view-narrow">
@@ -203,75 +230,106 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     );
   }
 
-  // ---- battle screen ----
+  // ---- 战斗中:竞技场 ----
   if (battle) {
     const s = battle.state;
     const u = s.userTeam[s.activeUser];
     const a = s.aiTeam[s.activeAi];
-    const bench = s.userTeam
-      .map((m, i) => ({ m, i }))
-      .filter(({ m, i }) => i !== s.activeUser && m.hp > 0);
     const finished = s.status !== "active";
+    const bench = s.userTeam.map((m, i) => ({ m, i })).filter(({ m, i }) => i !== s.activeUser && m.hp > 0);
     const log = (s.log ?? []).slice(-14);
+    const popupFor = (side) => (popup?.side === side ? popup : null);
 
     return (
-      <div className="view-wide">
-        <h2 className="view-title">
-          对战 · 第 {s.turn} 回合
-          {finished && (
-            <span className={`battle-result ${s.status === "won" ? "win" : "lose"}`}>
-              {s.status === "won"
-                ? `🏆 胜利!${reward ? `奖励 +${reward} 图鉴币已入账` : ""}`
-                : " 💧 战败…"}
-            </span>
-          )}
-        </h2>
+      <div className="view-wide battle-view">
+        <div className={`battle-arena ${finished ? "is-finished" : ""} ${s.status === "won" ? "is-won" : ""}`}>
+          <div className="arena-plates">
+            <Nameplate mon={u} side="user" />
+            <div className="turn-badge">第 {s.turn} 回合</div>
+            <Nameplate mon={a} side="ai" />
+          </div>
 
-        <div className={`battle-stage ${stageImpact ? "is-impact" : ""}`}>
-          <ActiveMon mon={u} side="user" />
-          <div className="battle-vs">VS</div>
-          <ActiveMon mon={a} side="ai" />
+          <div className="arena-floor">
+            <div className={`arena-side arena-side-user ${lunge === "user" ? "is-lunging" : ""} ${hitFlash === "user" ? "is-hit" : ""}`}>
+              <ArenaMon mon={u} side="user" popup={popupFor("user")} />
+            </div>
+            <div className="arena-vs">
+              <span>VS</span>
+            </div>
+            <div className={`arena-side arena-side-ai ${lunge === "ai" ? "is-lunging" : ""} ${hitFlash === "ai" ? "is-hit" : ""}`}>
+              <ArenaMon mon={a} side="ai" popup={popupFor("ai")} />
+            </div>
+            {s.status === "won" && confetti && (
+              <div className="win-burst" aria-hidden="true">
+                {Array.from({ length: 60 }, (_, i) => (
+                  <span
+                    key={i}
+                    className="confetti"
+                    style={{
+                      left: `${(i * 17 + 5) % 100}%`,
+                      background: ["#ffcb05", "#e3350d", "#2a75bb", "#35c26b", "#f4f6fa"][i % 5],
+                      animationDelay: `${(i % 10) * 0.12}s`,
+                      animationDuration: `${2.2 + (i % 5) * 0.3}s`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {finished && (
+            <div className="battle-verdict">
+              {s.status === "won" ? "🏆 你赢得了战斗!" : "💫 AI 对手获得了胜利…"}
+              {reward > 0 && <span className="verdict-reward">+{reward} 图鉴币已入账</span>}
+            </div>
+          )}
         </div>
 
         {!finished && (
-          <div className="battle-actions">
-            <div className="moves">
-              {u.moves.map((m) => {
-                const eff = effectiveness(m.type, a.types);
-                const effTag = eff >= 2 ? "▲" : eff === 0 ? "✕" : eff < 1 ? "▼" : "";
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    className={`move-btn type-${m.type}`}
-                    disabled={busy}
-                    onClick={() => postAction({ kind: "move", moveId: m.id })}
-                  >
-                    {m.name}
-                    <span className="move-meta">
-                      {m.type} · 威力{m.power} {effTag}
-                    </span>
-                  </button>
-                );
-              })}
+          <div className="battle-dock">
+            <div className="dock-moves">
+              <div className="dock-label">招式</div>
+              <div className="moves">
+                {u.moves.map((m) => {
+                  const eff = effectiveness(m.type, a.types);
+                  const effTag = eff >= 2 ? "▲" : eff === 0 ? "✕" : eff < 1 ? "▼" : "";
+                  const moveColor = m.type;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`move-btn ${busy || playing ? "is-busy" : ""}`}
+                      style={{ "--move-color": undefined }}
+                      disabled={busy || playing}
+                      onClick={() => postAction({ kind: "move", moveId: m.id })}
+                      data-move={m.id}
+                    >
+                      <span className="move-name">{m.name}</span>
+                      <span className="move-meta">
+                        {m.type} · 威力{m.power} {effTag}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="bench">
-              <div className="bench-label">替补(换人消耗一回合)</div>
+            <div className="dock-bench">
+              <div className="dock-label">替补(换人消耗一回合)</div>
               {bench.map(({ m, i }) => (
                 <button
                   key={m.cardId}
                   type="button"
                   className="bench-btn"
-                  disabled={busy}
+                  disabled={busy || playing}
                   onClick={() => postAction({ kind: "switch", index: i })}
                 >
                   {displayName(m)} ({m.hp}/{m.maxHp})
                 </button>
               ))}
+              <button type="button" className="bench-btn is-forfeit" disabled={busy || playing} onClick={forfeit}>
+                投降
+              </button>
             </div>
-            <button type="button" className="btn-ghost forfeit" onClick={forfeit} disabled={busy}>
-              投降
-            </button>
           </div>
         )}
 
@@ -281,74 +339,68 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           </p>
         )}
 
-        <div className="battle-log">
-          {log.map((e, i) =>
-            e.kind === "reason" ? (
-              <div key={i} className="log-line log-reason">
-                <span className="log-turn">T{e.turn} 🤖</span> AI 行动理由:{e.text}
-              </div>
-            ) : (
-              <div key={i} className={`log-line log-${e.kind}`}>
-                <span className="log-turn">T{e.turn}</span>
-                <span className="log-text">{e.text}</span>
-              </div>
-            )
-          )}
-        </div>
-        {confetti && s.status === "won" && (
-          <div className="win-burst" aria-hidden="true">
-            {Array.from({ length: 60 }, (_, i) => (
-              <span
-                key={i}
-                className="confetti"
-                style={{
-                  left: `${(i * 17 + 5) % 100}%`,
-                  background: ["#ffcb05", "#e3350d", "#2a75bb", "#35c26b", "#f4f6fa"][i % 5],
-                  animationDelay: `${(i % 10) * 0.12}s`,
-                  animationDuration: `${2.2 + (i % 5) * 0.3}s`,
-                }}
-              />
-            ))}
+        <details className="battle-history" open={false}>
+          <summary>战斗日志</summary>
+          <div className="battle-log">
+            {log.map((e, i) =>
+              e.kind === "reason" ? (
+                <div key={i} className="log-line log-reason">
+                  <span className="log-turn">T{e.turn} 🤖</span> AI 行动理由:{e.text}
+                </div>
+              ) : (
+                <div key={i} className={`log-line log-${e.kind}`}>
+                  <span className="log-turn">T{e.turn}</span>
+                  <span className="log-text">{e.text}</span>
+                </div>
+              )
+            )}
           </div>
-        )}
+        </details>
       </div>
     );
   }
 
-  // ---- pre-battle: squad status ----
+  // ---- 开战前:编队就绪检查 ----
   return (
-    <div className="view-narrow">
-      <div className="card-box center">
-        <h3 className="view-title">对战</h3>
+    <div className="battle-view">
+      <div className="battle-pregame">
+        <div className="pregame-title">
+          <span className="view-title">对战</span>
+          <p className="hint">从你的收藏中编入 3 只宝可梦,与 AI 对手展开回合制对战。</p>
+        </div>
         {teamIds === null ? (
-          <p>加载中…</p>
+          <p className="hint center">加载中…</p>
         ) : teamIds.length === 3 ? (
           <>
-            <p>你的编队已就绪,选择你的对手:</p>
-            <div className="mode-picker">
-              <button type="button" className="btn-primary" onClick={() => startBattle("rule")} disabled={busy}>
-                {resumed ? "继续战斗" : "规则对手"}
-                <span className="mode-sub">零消耗 · 行为可预测</span>
-              </button>
-              <button type="button" className="btn-primary" onClick={() => startBattle("reasoned")} disabled={busy}>
-                {resumed ? "继续战斗" : "AI 推演对手"}
-                <span className="mode-sub">模型选择行动并说明理由</span>
-              </button>
+            <div className="pregame-squad">
+              {teamMons.map((c) => (
+                <div key={c.id} className="pregame-mon">
+                  <img src={artworkUrl(c.id)} alt={c.name} />
+                  <span>{c.zh_name || c.name}</span>
+                </div>
+              ))}
+              <div className="pregame-vs">VS</div>
+              <div className="pregame-mon is-mystery">
+                <span className="mystery-mark">?</span>
+                <span>AI 对手</span>
+              </div>
             </div>
-            <p className="hint">胜利奖励 +100 图鉴币;战斗由服务器权威结算,数据全部来自真实图鉴。</p>
+            <button type="button" className="btn-primary" onClick={startBattle} disabled={busy}>
+              {busy ? "准备中…" : resumed ? "继续战斗" : "开始对战"}
+            </button>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
           </>
         ) : (
           <>
-            <p className="hint">还没有对战编队——先去收藏页选 3 只宝可梦编入队伍。</p>
+            <p className="hint center">还没有对战编队——先去收藏页选 3 只宝可梦编入队伍。</p>
             <button type="button" className="btn-primary" onClick={onGoCollection}>
               去收藏页编队
             </button>
           </>
-        )}
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
         )}
       </div>
     </div>

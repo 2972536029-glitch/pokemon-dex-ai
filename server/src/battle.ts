@@ -67,6 +67,10 @@ const TYPE_MOVES: Record<PType, Move> = {
   fairy: { id: "fairy-strike", name: "魔法闪耀", type: "fairy", power: 65 },
 };
 
+/** Official artwork URL (derived from dex id; PokeAPI sprite repo). */
+export const artworkFor = (id: number) =>
+  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+
 export interface BattleMon {
   cardId: number;
   name: string;
@@ -75,6 +79,7 @@ export interface BattleMon {
   types: PType[];
   stats: Record<string, number>;
   sprite: string | null;
+  artwork: string;
   maxHp: number;
   hp: number;
   moves: Move[];
@@ -99,6 +104,7 @@ export function battleMonFromCard(card: {
     types,
     stats: card.stats,
     sprite: card.sprite ?? null,
+    artwork: artworkFor(card.id),
     maxHp: (card.stats.hp ?? 50) + 60,
     hp: (card.stats.hp ?? 50) + 60,
     moves,
