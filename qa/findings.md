@@ -1,7 +1,8 @@
 # QA 发现台账 · Phase 1
 
 > 唯一台账,只增不改;修复合入后更新状态行。
-> 第 1 轮:全新上下文只读评审(2026-09-24)→ 1 P1 + 12 P2;第 2 轮:复核 + 回归猎茬(2026-09-24)→ 13/13 销项,无新问题,3 条 P3 观察(QA-014~016)已同步修复。
+> 第 1 轮:全新上下文只读评审(2026-09-24)→ 1 P1 + 12 P2;第 2 轮:复核销项 13/13 + 3 条 P3 已修;
+> 第 3 轮(v1.2.x 回归猎茬,2026-09-24):QA-017~028,其中 P2×3 已修(并发回合乐观锁/AI 阵容 sprite/测试断言反向),P3×11 已修或记录为观察项。
 
 | 编号 | 里程碑 | 级别 | 责任 | 位置 | 描述 | 修法 | 状态 |
 |---|---|---|---|---|---|---|---|
@@ -24,3 +25,21 @@
 | QA-014 | Phase1 | P3 | 后端 | server/src/routes-phase1.ts:73/92 | 内层友好文案被 wrap 500 分支覆盖(死代码) | 简化为直接 rethrow | 已修复 |
 | QA-015 | Phase1 | P3 | 前端 | src/views/PacksView.jsx | 前端硬编码 +50,未消费 API 下发的 dailyBonus | 消费 API 值 | 已修复 |
 | QA-016 | Phase1 | P3 | 前端 | src/views/PacksView.jsx:33 | randomUUID 在 try 外,非安全上下文可能卡死 busy | 移入 try | 已修复 |
+
+
+## 第 3 轮发现(v1.2.x 推演模式回归猎茬)
+
+| 编号 | 级别 | 责任 | 位置 | 描述 | 修法 | 状态 |
+|---|---|---|---|---|---|---|
+| QA-017 | P2 | 后端 | routes-battle.ts | 同一战斗并发 turn 的 TOCTOU:双请求双结算,临近胜利奖励双发;与 forfeit 并发可复活已结束战斗 | UPDATE 加 `AND status='active'` + rowCount 判定(乐观锁) | 已修复(复核销项) |
+| QA-018 | P2 | 后端 | routes-battle.ts:116 | AI 阵容 SELECT 漏 c.sprite,对手卡牌永远无图 | 补列 | 已修复(复核销项) |
+| QA-019 | P2 | 测试 | qa/e2e.mjs:146 | R3 断言逻辑反向:干净的模型理由必然假失败 | 改为"理由与真实 AI 行动同回合配对"断言 | 已修复 |
+| QA-020 | P3 | 后端 | battle-ai.ts | JSDoc 声称 Never throws 与实现相反 | 修正注释 | 已修复 |
+| QA-021 | P3 | 后端 | routes-battle.ts | 战斗日志回合号取结算后的 turn,编号错位 | 结算前快照 turnNo | 已修复 |
+| QA-022 | P3 | 前端 | BattleView.jsx:157 | 胜利横幅 `reward ?? 100` 硬编码兜底(重蹈 QA-015) | 无快照时不显示具体数字 | 已修复 |
+| QA-023 | P3 | 前端 | BattleView/CollectionView | startBattle/forfeit/saveTeam 无 catch 或不读错误体,失败静默 | 补 catch + 错误展示 | 已修复 |
+| QA-024 | P3 | 后端 | battle-ai.ts | 守卫边界:换人理由不核对、关键词可同义绕过 | 设计即 best-effort,记录备查 | 已记录(观察项) |
+| QA-025 | P3 | 后端 | routes-battle.ts | req_abort 空壳信号:客户端断开不取消 LLM 调用(≤12s) | 接 req close → AbortController | 已修复 |
+| QA-026 | P3 | 后端 | battle-ai.ts:88 | `as never` 类型洗白绕过 LlmMessage 检查 | buildMessages 标注返回类型 | 已修复 |
+| QA-027 | P3 | 前端 | BattleView.jsx | resume 忽略请求的 mode(静默复用旧模式战斗) | 观察项:复用语义已由 resumed 标注 | 已记录(观察项) |
+| QA-028 | P3 | 文档 | docs/updates/v1.2-battle-sim.md | 设计稿与实现漂移(表结构/伤害声明核对/非法行动语义) | 补"实现偏差记录"节 | 已修复 |

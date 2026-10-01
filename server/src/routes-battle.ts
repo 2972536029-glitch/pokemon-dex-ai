@@ -20,8 +20,12 @@ import { chooseAiActionReasoned } from "./battle-ai.js";
 const BATTLE_REWARD = 100;
 const TEAM_SIZE = 3;
 
-function req_abort(_req: express.Request): AbortSignal {
-  return new AbortController().signal;
+/** Signal that aborts when the CLIENT disconnects mid-turn (bounded by the
+ *  12s model timeout anyway — this just stops paying for an unread answer). */
+function clientSignal(req: express.Request): AbortSignal {
+  const ac = new AbortController();
+  req.on("close", () => ac.abort());
+  return ac.signal;
 }
 
 export function mountBattle(): express.Router {
@@ -113,7 +117,7 @@ export function mountBattle(): express.Router {
     userCards.sort((a: any, b: any) => cardIds.indexOf(a.id) - cardIds.indexOf(b.id));
 
     const aiPool = (await q<any>(
-      `SELECT id, name, zh_name, rarity, types, stats FROM cards ORDER BY random() LIMIT ${TEAM_SIZE}`
+      `SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards ORDER BY random() LIMIT ${TEAM_SIZE}`
     )).rows;
 
     const state: BattleState = {
@@ -188,7 +192,7 @@ export function mountBattle(): express.Router {
     let aiReason: string | null = null;
     if (row.state.mode === "reasoned") {
       try {
-        const chosen = await chooseAiActionReasoned(row.state, req_abort(req));
+        const chosen = await chooseAiActionReasoned(row.state, clientSignal(req));
         aiAction = chosen.action;
         aiReason = chosen.reason;
       } catch (err: any) {
@@ -198,6 +202,7 @@ export function mountBattle(): express.Router {
     }
     if (!aiAction) aiAction = chooseAiAction(row.state);
 
+    const turnNo = row.state.turn; // log entries belong to THIS turn
     const rng = { next: () => crypto.randomBytes(4).readUInt32BE(0) / 0x1_0000_0000 };
     const { state, events } = resolveTurn(
       row.state,
@@ -209,10 +214,10 @@ export function mountBattle(): express.Router {
     // can still show the full battle log (state is the single source).
     const logEntries: LogEntry[] = [
       ...((row.state.log ?? []) as LogEntry[]),
-      ...events.map((e) => ({ turn: row.state.turn, kind: e.kind, actor: e.actor, text: e.text })),
+      ...events.map((e) => ({ turn: turnNo, kind: e.kind, actor: e.actor, text: e.text })),
     ];
     if (aiReason) {
-      logEntries.push({ turn: row.state.turn, kind: "reason", actor: "ai", text: aiReason });
+      logEntries.push({ turn: turnNo, kind: "reason", actor: "ai", text: aiReason });
     }
     state.log = logEntries;
 
@@ -220,13 +225,20 @@ export function mountBattle(): express.Router {
     const finished = state.status !== "active";
     if (finished && state.status === "won") reward = BATTLE_REWARD;
 
-    await tx(async (client) => {
-      await client.query(
+    // Optimistic lock on battle status (QA-017): two concurrent/retried turns
+    // read the same snapshot — only the FIRST write (status still 'active')
+    // lands; the loser gets 409 and re-reads the authoritative state. Without
+    // this, near-victory double requests would double the reward and revive
+    // forfeited fights.
+    const updated = await tx(async (client) => {
+      const upd = await client.query<{ id: string }>(
         `UPDATE battles SET state = $1, status = $2, finished_at =
            CASE WHEN $2 <> 'active' THEN now() ELSE finished_at END
-         WHERE id = $3`,
+         WHERE id = $3 AND status = 'active'
+         RETURNING id`,
         [JSON.stringify(state), state.status, row.id]
       );
+      if (upd.rowCount === 0) return null;
       if (reward > 0) {
         await client.query(`UPDATE users SET balance = balance + $1 WHERE id = $2`, [reward, user.id]);
         await client.query(
@@ -234,7 +246,13 @@ export function mountBattle(): express.Router {
           [user.id, reward]
         );
       }
+      return upd.rows[0];
     });
+
+    if (!updated) {
+      res.status(409).json({ error: "state_changed", message: "战斗状态已变化,请刷新查看最新战况" });
+      return;
+    }
 
     res.json({ state, events, reward });
   }));
@@ -242,14 +260,12 @@ export function mountBattle(): express.Router {
   router.post("/api/battle/:id/forfeit", wrap(async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
-    if (row.status === "active") {
-      row.state.status = "lost";
-      await q(
-        `UPDATE battles SET state = $1, status = 'lost', finished_at = now() WHERE id = $2`,
-        [JSON.stringify(row.state), row.id]
-      );
-    }
-    res.json({ ok: true });
+    const upd = await q(
+      `UPDATE battles SET status = 'lost', finished_at = now()
+       WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+      [row.id, user.id]
+    );
+    res.json({ ok: true, alreadyFinished: upd.rowCount === 0 });
   }));
 
   return router;

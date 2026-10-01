@@ -20,6 +20,7 @@
 // them by `index` and only emits the calls once finish_reason arrives.
 
 import { LlmError } from "./types.js";
+export type { LlmMessage } from "./types.js";
 import type { LlmMessage, ToolCallRequest } from "./types.js";
 
 export const GLM_CONFIG = {

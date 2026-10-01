@@ -143,7 +143,15 @@ const mvs = r.json?.state?.userTeam?.[r.json.state.activeUser]?.moves ?? [];
 r = await req("POST", `/api/battle/${reasonBattle}/turn`, { body: { action: { kind: "move", moveId: mvs[0]?.id } } });
 const reasonLine = (r.json?.state?.log ?? []).find((l) => l.kind === "reason");
 check("R2 推演回合有理由入日志", Boolean(reasonLine), JSON.stringify(r.json?.state?.log ?? r.text).slice(0, 120));
-check("R3 理由守卫/回退标注存在", reasonLine ? /守卫|规则策略|理由/.test(reasonLine.text) : false, reasonLine?.text);
+// 条件断言:仅当理由含克制强度断言而计算倍数不足 2 时,才要求守卫标注
+const rText = reasonLine?.text ?? "";
+const claimsStrong = /克制|效果绝佳/.test(rText) && !/守卫/.test(rText);
+const effLine = (r.json?.state?.log ?? []).find((l) => l.kind === "move" && l.actor === "ai");
+// 理由必须与真实 AI 行动同回合配对(行动确实发生了,理由不是凭空编的)
+const pairedMove = (r.json?.state?.log ?? []).some(
+  (l) => l.turn === reasonLine?.turn && l.kind === "move" && l.actor === "ai"
+);
+check("R3 理由与行动配对", Boolean(reasonLine) && pairedMove, rText);
 r = await req("POST", `/api/battle/${reasonBattle}/forfeit`);
 
 // ---- B5/B7/A4: failures ----

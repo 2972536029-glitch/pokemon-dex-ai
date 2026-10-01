@@ -82,6 +82,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       setBattle({ battleId: body.battleId, state: body.state });
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setBusy(false);
     }
@@ -117,8 +119,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     if (!battle || busy) return;
     setBusy(true);
     try {
-      await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
-      setBattle({ ...battle, state: { ...battle.state, status: "lost" } });
+      const res = await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
+      if (res.ok) setBattle({ ...battle, state: { ...battle.state, status: "lost" } });
+      else setError("投降失败,请重试");
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setBusy(false);
     }
@@ -154,7 +159,9 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           对战 · 第 {s.turn} 回合
           {finished && (
             <span className={`battle-result ${s.status === "won" ? "win" : "lose"}`}>
-              {s.status === "won" ? `🏆 胜利!奖励 +${reward ?? 100} 图鉴币` : " 💧 战败…"}
+              {s.status === "won"
+                ? `🏆 胜利!${reward ? `奖励 +${reward} 图鉴币已入账` : ""}`
+                : " 💧 战败…"}
             </span>
           )}
         </h2>

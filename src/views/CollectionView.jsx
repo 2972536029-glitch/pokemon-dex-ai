@@ -49,13 +49,21 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
   async function saveTeam() {
     if (saving || team.length !== TEAM_SIZE) return;
     setSaving(true);
+    setError(null);
     try {
       const res = await fetch("/api/battle/team", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cardIds: team }),
       });
-      if (res.ok) setSaved(true);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.message || "保存失败,请重试");
+        return;
+      }
+      setSaved(true);
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setSaving(false);
     }

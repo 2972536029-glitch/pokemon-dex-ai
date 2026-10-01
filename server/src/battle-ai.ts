@@ -9,6 +9,7 @@
 
 import { BattleState, Action, effectiveness, PType } from "./battle.js";
 import { chatComplete, GLM_CONFIG } from "./llm.js";
+import type { LlmMessage } from "./types.js";
 
 export interface ReasonedAction {
   action: Action;
@@ -20,7 +21,7 @@ const displayName = (m: { zhName: string | null; name: string }) =>
   m.zhName ? `${m.zhName}(${m.name})` : m.name;
 
 /** Build the decision prompt with PRECOMPUTED effectiveness numbers. */
-function buildMessages(state: BattleState) {
+function buildMessages(state: BattleState): import("./llm.js").LlmMessage[] {
   const ai = state.aiTeam[state.activeAi];
   const user = state.userTeam[state.activeUser];
 
@@ -72,8 +73,9 @@ function guardReason(reason: string, move: import("./battle.js").Move, defenderT
 }
 
 /**
- * Ask the model for the next AI action. Never throws: any failure returns
- * reasoned=false with the rule fallback handled by the caller.
+ * Ask the model for the next AI action. THROWS on model error / timeout /
+ * unparsable output / illegal choice — the CALLER falls back to the rule
+ * strategy in every failure case (reasoned=false marks that fallback).
  */
 export async function chooseAiActionReasoned(
   state: BattleState,
@@ -85,7 +87,7 @@ export async function chooseAiActionReasoned(
   if (!GLM_CONFIG.apiKey) throw new Error("model unavailable");
   const signalAny = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
 
-  const raw = await chatComplete(buildMessages(state) as never, {
+  const raw = await chatComplete(buildMessages(state), {
     signal: signalAny,
     maxTokens: 160,
     temperature: 0.4,
