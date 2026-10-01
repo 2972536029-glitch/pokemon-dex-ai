@@ -531,3 +531,337 @@
   45% { opacity: 1; }
   100% { opacity: 0; transform: scale(1.6); }
 }
+
+/* ---- 对战竞技场:铭牌 / 立绘对峙 / 招式坞 / 日志 ---- */
+.battle-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.battle-arena {
+  position: relative;
+  border-radius: 20px;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 85%, rgba(255, 203, 5, 0.12), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 85%, rgba(42, 117, 187, 0.14), transparent 60%),
+    linear-gradient(180deg, rgba(42, 117, 187, 0.08) 0%, transparent 40%, rgba(227, 53, 13, 0.07) 100%);
+  border: 1px solid var(--border);
+}
+.arena-plates {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+.plate {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-card);
+}
+.plate-ai {
+  text-align: right;
+}
+.plate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.plate-name {
+  font-weight: 800;
+  color: var(--text);
+  font-size: 14px;
+}
+.plate-nums {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+.plate-types { opacity: 0.8; }
+.turn-badge {
+  align-self: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  background: var(--pika);
+  padding: 6px 14px;
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgba(255, 203, 5, 0.35);
+  white-space: nowrap;
+}
+.arena-floor {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 10px;
+  min-height: 240px;
+}
+.arena-side {
+  display: flex;
+  justify-content: center;
+  transition: transform 0.3s ease;
+}
+.arena-side.is-lunging.is-hit { transform: none; }
+.arena-vs {
+  align-self: center;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--ball-red);
+  text-shadow: 0 2px 10px rgba(227, 53, 13, 0.4);
+}
+.arena-mon {
+  position: relative;
+  text-align: center;
+}
+.arena-mon.is-hit .arena-sprite {
+  animation: arena-hit 0.5s ease;
+  filter: drop-shadow(0 0 14px rgba(229, 72, 77, 0.95));
+}
+@keyframes arena-hit {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-10px); }
+  35% { transform: translateX(9px); }
+  55% { transform: translateX(-6px); }
+  75% { transform: translateX(4px); }
+}
+.arena-side.is-lunging .arena-sprite {
+  animation: arena-lunge 0.38s ease-in-out;
+}
+.arena-side-user.is-lunging .arena-sprite {
+  animation-name: arena-lunge-right;
+}
+.arena-side-ai.is-lunging .arena-sprite {
+  animation-name: arena-lunge-left;
+}
+@keyframes arena-lunge-right {
+  0%, 100% { transform: translateX(0) scale(1); }
+  45% { transform: translateX(110px) scale(1.1); }
+}
+@keyframes arena-lunge-left {
+  0%, 100% { transform: translateX(0) scale(1); }
+  45% { transform: translateX(-110px) scale(1.1); }
+}
+.arena-sprite {
+  width: 170px;
+  height: 170px;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 16px rgba(0, 0, 0, 0.35));
+  animation: arena-idle 2.8s ease-in-out infinite;
+}
+.arena-side-ai .arena-sprite {
+  transform: scaleX(-1);
+}
+.arena-side-ai.is-lunging .arena-sprite,
+.arena-side-ai.is-hit .arena-sprite {
+  transform: scaleX(-1);
+}
+@keyframes arena-idle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.arena-side-ai .arena-sprite {
+  animation-name: arena-idle-flip;
+}
+@keyframes arena-idle-flip {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50% { transform: scaleX(-1) translateY(-8px); }
+}
+.arena-hp {
+  margin-top: 8px;
+  width: 200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 招式坞 */
+.battle-dock {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+.dock-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.moves {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.move-btn {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.move-btn:hover:not(:disabled) {
+  border-color: var(--poke-blue);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(42, 117, 187, 0.2);
+}
+.move-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.move-name {
+  font-weight: 800;
+  font-size: 14px;
+}
+.move-meta {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  margin-left: 8px;
+}
+.bench {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bench-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-2);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.bench-btn:hover:not(:disabled) {
+  border-color: var(--pika);
+  color: var(--text);
+}
+.bench-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bench-btn.is-forfeit {
+  border-color: rgba(227, 53, 13, 0.4);
+  color: var(--ball-red);
+}
+
+/* 战前:编队预览 */
+.battle-pregame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  background:
+    radial-gradient(ellipse 60% 70% at 20% 100%, rgba(255, 203, 5, 0.1), transparent 60%),
+    radial-gradient(ellipse 60% 70% at 80% 100%, rgba(42, 117, 187, 0.12), transparent 60%),
+    var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 30px;
+}
+.pregame-title {
+  text-align: center;
+}
+.pregame-squad {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.pregame-mon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pregame-mon img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.25));
+}
+.pregame-vs {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--ball-red);
+}
+.pregame-mon.is-mystery {
+  color: var(--text-dim);
+}
+.mystery-mark {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 3px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  font-weight: 900;
+  color: var(--text-dim);
+  background: var(--bg);
+}
+.pregame-actions {
+  display: flex;
+  gap: 10px;
+}
+.battle-verdict {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+  padding: 10px;
+}
+.verdict-reward {
+  margin-left: 12px;
+  color: var(--poke-blue);
+  font-size: 16px;
+}
+.battle-history {
+  margin-top: 4px;
+}
+.battle-history summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+@media (max-width: 760px) {
+  .arena-floor {
+    grid-template-columns: 1fr;
+  }
+  .arena-vs {
+    margin: 6px 0;
+  }
+  .arena-plates {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .turn-badge {
+    justify-self: center;
+  }
+  .battle-dock {
+    grid-template-columns: 1fr;
+  }
+}

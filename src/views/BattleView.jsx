@@ -14,16 +14,17 @@ function HpBar({ mon }) {
   const cls = pct > 50 ? "hp-hi" : pct > 20 ? "hp-mid" : "hp-lo";
   return (
     <div className="hp-track">
+      {/* ghost 条延迟跟落:掉血时红条先缩,白条缓缓跟上(格斗游戏手法) */}
       <div className="hp-ghost" style={{ width: `${pct}%` }} />
       <div className={`hp-fill ${cls}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
 
-/** 游戏式血条铭牌:名字 + 等级感 + HP 双层条 */
-function Nameplate({ mon, side }) {
+/** 游戏式血条铭牌:名字 + HP 双层条 + 属性 */
+function Nameplate({ mon }) {
   return (
-    <div className={`plate plate-${side}`}>
+    <div className="plate">
       <div className="plate-row">
         <span className="plate-name">{displayName(mon)}</span>
         <span className={`rarity-badge rarity-${mon.rarity}`}>{RARITY_LABEL[mon.rarity] || mon.rarity}</span>
@@ -44,7 +45,6 @@ function ArenaMon({ mon, side, lunging, hit, popup }) {
   return (
     <div className={`arena-mon arena-${side} ${lunging ? "is-lunging" : ""} ${hit ? "is-hit" : ""}`}>
       {popup && <div className={`dmg-popup ${popup.cls}`}>{popup.text}</div>}
-      <div className="arena-platform" />
       <img className="arena-sprite" src={mon.artwork || mon.sprite} alt={mon.name} />
       <div className="arena-hp">
         <HpBar mon={mon} />
@@ -55,50 +55,14 @@ function ArenaMon({ mon, side, lunging, hit, popup }) {
 
 export default function BattleView({ onGoLogin, onGoCollection }) {
   const { me, refresh } = useAuth();
-  // ---- 回合动画编排器:逐个播放服务器事件 ----
-  async function playEvents(events, finalState) {
-    setPlaying(true);
-    const view = JSON.parse(JSON.stringify(battle.state));
-
-    for (const ev of events) {
-      if (ev.kind === "move") {
-        const actorSide = ev.actor;
-        setLunge(actorSide);
-        await sleep(380);
-        setLunge(null);
-        const defSide = actorSide === "user" ? "ai" : "user";
-        setHitFlash(defSide);
-        setStageImpact(true);
-        setPopup({
-          side: defSide,
-          text: `-${ev.damage ?? 0}`,
-          cls: ev.text.includes("效果绝佳") ? "pop-super" : ev.text.includes("没有效果") ? "pop-zero" : "pop-normal",
-        });
-        const defIdx = defSide === "user" ? view.activeUser : view.activeAi;
-        const defMon = (defSide === "user" ? view.userTeam : view.aiTeam)[defIdx];
-        defMon.hp = Math.max(0, defMon.hp - (ev.damage ?? 0));
-        setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
-        await sleep(750);
-        setPopup(null);
-        setHitFlash(null);
-        setStageImpact(false);
-        await sleep(250);
-      } else {
-        setBattle({ battleId: battle.battleId, state: finalState });
-        await sleep(900);
-      }
-    }
-    setPlaying(false);
-    setBattle({ battleId: battle.battleId, state: finalState });
-  }
   const [teamIds, setTeamIds] = useState(null);
   const [teamMons, setTeamMons] = useState([]); // 编队预览数据
   const [battle, setBattle] = useState(null); // { battleId, state }
   // 回合动画编排:服务器一次返回全部事件,这里按顺序逐个播放
   const [playing, setPlaying] = useState(false);
   const [popup, setPopup] = useState(null); // {side, text, cls}
-  const [lunge, setLunge] = useState(null);
-  const [hitFlash, setHitFlash] = useState(null);
+  const [lunge, setLunge] = useState(null); // "user"|"ai" 突进中
+  const [hitFlash, setHitFlash] = useState(null); // 受击抖动
   const [stageImpact, setStageImpact] = useState(false);
   const [confetti, setConfetti] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -129,6 +93,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     setBusy(true);
     setError(null);
     setReward(null);
+    setConfetti(false);
     try {
       const res = await fetch("/api/battle/start", {
         method: "POST",
@@ -141,6 +106,20 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       setBattle({ battleId: body.battleId, state: body.state });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forfeit() {
+    if (!battle || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
+      if (res.ok) setBattle({ ...battle, state: { ...battle.state, status: "lost" } });
+      else setError("投降失败,请重试");
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setBusy(false);
     }
@@ -207,7 +186,6 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         setStageImpact(false);
         await sleep(250);
       } else {
-        // ko / switch / end / info:直接同步最终状态(补位动画由 CSS 呈现)
         setBattle({ battleId: battle.battleId, state: finalState });
         await sleep(900);
       }
@@ -293,16 +271,13 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                 {u.moves.map((m) => {
                   const eff = effectiveness(m.type, a.types);
                   const effTag = eff >= 2 ? "▲" : eff === 0 ? "✕" : eff < 1 ? "▼" : "";
-                  const moveColor = m.type;
                   return (
                     <button
                       key={m.id}
                       type="button"
-                      className={`move-btn ${busy || playing ? "is-busy" : ""}`}
-                      style={{ "--move-color": undefined }}
+                      className="move-btn"
                       disabled={busy || playing}
                       onClick={() => postAction({ kind: "move", moveId: m.id })}
-                      data-move={m.id}
                     >
                       <span className="move-name">{m.name}</span>
                       <span className="move-meta">
@@ -339,7 +314,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           </p>
         )}
 
-        <details className="battle-history" open={false}>
+        <details className="battle-history">
           <summary>战斗日志</summary>
           <div className="battle-log">
             {log.map((e, i) =>
@@ -360,7 +335,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     );
   }
 
-  // ---- 开战前:编队就绪检查 ----
+  // ---- 开战前:编队就绪检查 + 预览 ----
   return (
     <div className="battle-view">
       <div className="battle-pregame">
@@ -385,9 +360,14 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                 <span>AI 对手</span>
               </div>
             </div>
-            <button type="button" className="btn-primary" onClick={startBattle} disabled={busy}>
-              {busy ? "准备中…" : resumed ? "继续战斗" : "开始对战"}
-            </button>
+            <div className="pregame-actions">
+              <button type="button" className="btn-primary" onClick={() => startBattle("rule")} disabled={busy}>
+                {busy ? "准备中…" : resumed ? "继续战斗" : "开始对战(规则对手)"}
+              </button>
+              <button type="button" className="btn-primary" onClick={() => startBattle("reasoned")} disabled={busy}>
+                {busy ? "准备中…" : "开始对战(AI 推演)"}
+              </button>
+            </div>
             {error && (
               <p className="form-error" role="alert">
                 {error}
