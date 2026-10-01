@@ -84,6 +84,56 @@ check("B 注册第二用户", r.json?.user?.balance === 300, r.text);
 r = await req("GET", "/api/collection", { jar: "u2" });
 check("E1 跨用户隔离", Array.isArray(r.json?.cards) && r.json.cards.length === 0, r.text);
 
+// ---- v1.2: battle flow ----
+// draw down to have 3+ cards (qatest has 1-2 from earlier draws; draw 2 more)
+r = await req("POST", "/api/packs/basic/draw", { body: { orderId: oid(21) } });
+r = await req("POST", "/api/packs/basic/draw", { body: { orderId: oid(22) } });
+let cards = [];
+r = await req("GET", "/api/collection");
+cards = r.json?.cards ?? [];
+check("V1 收藏至少3种可编队", cards.length >= 3, `have ${cards.length}`);
+
+// invalid team: duplicated ids (3 slots but not 3 DISTINCT pokemon)
+r = await req("POST", "/api/battle/team", { body: { cardIds: [cards[0].id, cards[0].id, cards[0].id] } });
+check("V2 编队重复卡 → 400", r.status === 400, r.text);
+// unowned card
+r = await req("POST", "/api/battle/team", { body: { cardIds: [999999, 999998, 999997] } });
+check("V3 编队未拥有 → 403", r.status === 403, r.text);
+// valid team
+const teamIds = cards.slice(0, 3).map(c => c.id);
+r = await req("POST", "/api/battle/team", { body: { cardIds: teamIds } });
+check("V4 编队保存", r.json?.team?.length === 3, r.text);
+// start
+r = await req("POST", "/api/battle/start");
+const battleId = r.json?.battleId;
+check("V5 开战返回状态", Boolean(battleId) && r.json?.state?.userTeam?.length === 3, r.text);
+check("V6 AI 阵容 3 只", r.json?.state?.aiTeam?.length === 3, r.text);
+// resume: second start returns the same battle
+r = await req("POST", "/api/battle/start");
+check("V7 重复 start 复用同一战斗", r.json?.battleId === battleId && r.json?.resumed === true, r.text);
+// state
+r = await req("GET", `/api/battle/${battleId}/state`);
+check("V8 状态快照", r.json?.state?.turn >= 1, r.text);
+// play a turn (move of active mon)
+const activeMoves = r.json?.state?.userTeam?.[r.json.state.activeUser]?.moves ?? [];
+r = await req("POST", `/api/battle/${battleId}/turn`, { body: { action: { kind: "move", moveId: activeMoves[0]?.id } } });
+check("V9 回合结算有事件", Array.isArray(r.json?.events) && r.json.events.length > 0, r.text);
+check("V10 战斗仍激活或已结束", ["active","won","lost"].includes(r.json?.state?.status), r.text);
+// other user cannot see this battle
+r = await req("GET", `/api/battle/${battleId}/state`, { jar: "u2" });
+check("V11 越权查看 → 404", r.status === 404, r.text);
+// invalid action
+r = await req("POST", `/api/battle/${battleId}/turn`, { body: { action: { kind: "move", moveId: "no-such" } } });
+check("V12 非法招式也结算(回退普招)或 400", r.status === 400 || Array.isArray(r.json?.events), r.text);
+// forfeit
+r = await req("POST", `/api/battle/${battleId}/forfeit`);
+check("V13 投降成功", r.json?.ok === true, r.text);
+r = await req("GET", `/api/battle/${battleId}/state`);
+check("V14 投降后状态 lost", r.json?.state?.status === "lost", r.text);
+// battle vs unauthenticated
+r = await req("POST", "/api/battle/start", { jar: "none" });
+check("V15 未登录开战 401", r.status === 401, r.text);
+
 // ---- B5/B7/A4: failures ----
 r = await req("POST", "/api/auth/login", { body: { username: U1, password: "wrong-pass" } });
 check("B5 错误密码统一话术", r.status === 401 && r.json?.message === "用户名或密码错误", r.text);

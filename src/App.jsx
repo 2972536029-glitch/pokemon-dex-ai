@@ -4,6 +4,7 @@ import DexView from "./DexView.jsx";
 import PacksView from "./views/PacksView.jsx";
 import CollectionView from "./views/CollectionView.jsx";
 import LoginView from "./views/LoginView.jsx";
+import BattleView from "./views/BattleView.jsx";
 import ChatPanel from "./chat/ChatPanel.jsx";
 import "./views/views.css";
 
@@ -34,6 +35,7 @@ function Header({ route, go }) {
         {link("#/dex", "图鉴")}
         {link("#/packs", "卡包商店")}
         {link("#/collection", "我的收藏")}
+        {link("#/battle", "对战")}
       </nav>
       <div className="topbar-user">
         {me ? (
@@ -70,8 +72,9 @@ const Shell = () => {
 
   let view;
   if (route === "#/packs") view = <PacksView />;
-  else if (route === "#/collection") view = <CollectionView onGoLogin={() => go("#/login")} />;
+  else if (route === "#/collection") view = <CollectionView onGoLogin={() => go("#/login")} onGoBattle={() => go("#/battle")} />;
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
+  else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
   else view = <DexView onContextChange={setDexContext} />;
 
   return (

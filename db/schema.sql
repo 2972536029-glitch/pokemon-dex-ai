@@ -69,6 +69,23 @@ CREATE TABLE IF NOT EXISTS daily_bonus (
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_tx(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS user_teams (
+  user_id       BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  card_ids      INTEGER[] NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS battles (
+  id            TEXT PRIMARY KEY,          -- uuid
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  state         JSONB NOT NULL,            -- full BattleState snapshot
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','won','lost')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_battles_user_active ON battles(user_id, status);
+
 -- migrations for tables created before these lines existed
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS zh_name TEXT;
 DROP INDEX IF EXISTS idx_user_cards_user; -- redundant with PK prefix (QA-012)

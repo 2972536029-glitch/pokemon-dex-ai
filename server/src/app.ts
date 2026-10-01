@@ -10,6 +10,7 @@ import { GLM_CONFIG } from "./llm.js";
 import { LlmError } from "./types.js";
 import { loadEnvFile } from "./env.js";
 import { mountPhase1 } from "./routes-phase1.js";
+import { mountBattle } from "./routes-battle.js";
 import { userFromRequest } from "./auth.js";
 import { catalogNames, seedCatalog } from "./cards.js";
 
@@ -50,6 +51,7 @@ export function createApp() {
   // dex + AI chat keep working even when DATABASE_URL is absent (the router
   // returns 503 for its own routes instead of taking the app down).
   app.use(mountPhase1());
+  app.use(mountBattle());
 
   // ---- the chat endpoint ----------------------------------------------------
   app.post("/api/chat", async (req, res) => {
