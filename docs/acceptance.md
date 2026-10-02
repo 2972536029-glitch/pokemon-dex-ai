@@ -60,3 +60,45 @@
 
 - [ ] H1 无 DATABASE_URL 时:图鉴 + AI 问答正常,Phase1 路由 503 + 中文提示(不崩整个应用)
 - [ ] H2 生产环境 DATABASE_URL 接入 Neon 后数据持久(重启/冷启动不丢)
+
+# 验收清单 · M2(首页大厅 + 无限金币测试号 + 战斗健化 + 移动端减负)
+
+> 追加里程碑靶子。每条必须可客观执行/核验。证据:主代理提供构建与回归运行结果。
+
+## I. 通用前置
+
+- [ ] I1 `vite build` + `tsc -p server` 零错误
+- [ ] I2 `git ls-files` 无 `.env`/`.env.local`/令牌文件;全仓库无 vcp_ 真值、GLM key 真值
+- [ ] I3 `.gitignore` 覆盖 node_modules/dist/.env*/server/dist/.vercel
+
+## II. 首页大厅
+
+- [ ] II1 hash 为空时默认路由 = `#/home`;浏览器标签页标题含「首页」
+- [ ] II2 顶部导航含「首页」项;品牌球点击落 `#/home`
+- [ ] II3 开屏 CTA 落 `#/home`(登录与未登录一致)
+- [ ] II4 首页仅消费 GET 类接口(collection/team/PokeAPI),无写接口调用
+- [ ] II5 今日精选按日期确定性:算法 `floor(Date.now()/86400000) % 1010 + 1`,同日同号
+
+## III. 无限金币测试号
+
+- [ ] III1 免费通道仅由环境变量 `UNLIMITED_USER_IDS` 驱动;仓库(含文档)无真实白名单值硬编码
+- [ ] III2 白名单用户抽卡:不 `UPDATE users.balance`、不写 wallet_tx;gacha_orders/user_cards 照常写入
+- [ ] III3 非白名单用户路径与旧版一致(扣费/余额不足 402/流水)
+- [ ] III4 订单幂等两通道一致:同 orderId 重放不重复发卡不重复扣费
+
+## IV. 战斗健化
+
+- [ ] IV1 `/api/battle/active`、`/api/battle/:id/state`、`/start`(resume)读取路径均调用 clampBattleState
+- [ ] IV2 clampBattleState 对每只 mon 钳制 `hp ∈ [0, maxHp]`
+- [ ] IV3 前端 turn 遇 5xx 自动重试一次;错误行提供重试按钮;服务端失败时事务回滚(重试不双扣/不重复奖励)
+
+## V. 立绘 CDN 与移动端
+
+- [ ] V1 客户端 artworkUrl/pixelSpriteUrl 与服务端 artworkFor 均指向 jsDelivr;无 raw.githubusercontent 立绘残留
+- [ ] V2 `≤760px`:topbar/ai-panel/卡片容器 backdrop-filter 停用;body::after 停用;重绘型无限动画(background-position/box-shadow)停用
+- [ ] V3 `@supports (min-height:100dvh)` 下 app-shell/battle-pregame/packs-view 使用 dvh
+
+## VI. 安全回归
+
+- [ ] VI1 UNLIMITED 白名单真实值仅存于 Vercel 环境变量;代码/文档/截图脚本中无
+- [ ] VI2 聊天/战斗错误文案不内含 HTTP 状态码或内部堆栈
