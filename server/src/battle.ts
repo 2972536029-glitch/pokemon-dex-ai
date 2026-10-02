@@ -88,9 +88,23 @@ export interface BattleMon {
 /** Clamp hp to [0, maxHp] for every mon. Historical battles persisted before
  * catalog stat changes can carry hp > maxHp; sanitize on every read so the
  * UI never shows impossible numbers (e.g. 168/166). */
+/** Rewrite stale artwork/sprite URLs (pre-CDN battles froze
+ * raw.githubusercontent links, which time out from CN networks) to the
+ * jsDelivr mirror. Heals every battle on read. */
+function healMonUrls<T extends BattleMon>(mon: T): T {
+  const toJsdelivr = (u: string | null, path: string) =>
+    !u || u.includes("raw.githubusercontent")
+      ? `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/${path}/${mon.cardId}.png`
+      : u;
+  mon.artwork = toJsdelivr(mon.artwork ?? null, "pokemon/other/official-artwork");
+  mon.sprite = toJsdelivr(mon.sprite ?? null, "pokemon");
+  return mon;
+}
+
 export function clampBattleState<T extends { userTeam: BattleMon[]; aiTeam: BattleMon[] }>(state: T): T {
   for (const mon of [...state.userTeam, ...state.aiTeam]) {
     mon.hp = Math.min(Math.max(0, mon.hp), mon.maxHp);
+    healMonUrls(mon);
   }
   return state;
 }
