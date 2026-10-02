@@ -72,5 +72,5 @@
 - 发现方式:用户报错后经 CUA 遥控其浏览器 DevTools,控制台证实 /turn 500 ×N;再经 Vercel 面板运行时日志展开拿到完整栈:wallet_tx_kind_check 违约
 - 根因:v1.2 加对战奖励时用 kind='battle' 写 wallet_tx,但建表 CHECK 只有 ('signup','daily','gacha');获胜→奖励插入→约束拒绝→事务回滚→500(重试同因再炸)
 - 修法:CREATE TABLE 补 'battle';迁移段幂等 DROP+ADD 约束;本地库验证 INSERT kind='battle' 成功
-- 状态:已修复(见 commit,QA-033 待复核)
+- 状态:已修复(ea5a235)→ 生产端到端验证:probe 号实战获胜,balance +100 入账,零 500 → 销项
 - 教训:发奖路径从未被 E2E 覆盖(探测号从未获胜过),检查约束这类 DDL 逻辑改代码时必须同步审
