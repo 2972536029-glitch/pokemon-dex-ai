@@ -54,15 +54,15 @@
 - 位置:server/src/app.ts:36-44
 - 描述:health 响应把数据库驱动错误信息截断 200 字符直出给未认证访客
 - 修法:响应只保留 db:"error",细节写日志
-- 状态:待修复
+- 状态:已修复(799c86e,QA 复核销项确认)
 
 ## QA-031 [P3] 文档 design-v1.3.md:45 残留旧立绘 CDN 地址
 - 描述:仍记录 raw.githubusercontent,易误导后来者
-- 修法:加「已迁移 jsDelivr」注记
-- 状态:待修复
+- 修法:整行替换为 jsDelivr 完整地址,注记置于 URL 外(首修把注记拼进 URL 中间,QA 复核打回后二次修复)
+- 状态:已修复(QA 复核销项确认)
 
 ## QA-032 [P3] .gitignore 未用 .env* 通配
 - 位置:.gitignore:8,13
 - 描述:未来新增 .env.production 等不会被忽略
 - 修法:改 .env* 并配 !.env.example
-- 状态:待修复
+- 状态:已修复(799c86e,QA 复核销项确认;QA 备注:原第 11 行残留纯空格行,无害)

@@ -42,7 +42,7 @@
 - R:蓝色微光边框
 - UR:金色流动渐变边框(keyframes 旋转)+ hover 卡面光泽扫过(holo sweep)
 
-立绘:`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master (已迁移,原 raw.githubusercontent)/master/sprites/pokemon/other/official-artwork/{id}.png`
+立绘:`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/{id}.png`(已迁移 jsDelivr,原 raw.githubusercontent)
 ——由 id 直接推导,**无需改数据库**;像素图仅保留在图鉴详情的小尺寸场景(若有)。
 
 ## 四、开包仪式感(状态机驱动的纯 CSS 动画)
