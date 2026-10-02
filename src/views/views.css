@@ -2174,3 +2174,66 @@
 }
 /* 吸顶导航遮挡滚动内容:全局滚动预留 */
 html { scroll-padding-top: 76px; }
+
+/* ====================================================================
+   移动端减负:修真机「疯狂闪屏」
+   三个已知机制,逐一堵上:
+   ① 100vh 随手机地址栏伸缩 → 布局反复抖动:一律改用 100dvh
+   ② fixed 全屏氛围层 + topbar backdrop-filter → 滚动时整层重绘闪烁:
+      小屏去掉毛玻璃、暗角只留一层,并给固定层独立合成层
+   ③ 弱 GPU 跑无限重绘动画(background-position / box-shadow)→ 闪烁:
+      小屏只保留 transform/opacity 类动画
+   ==================================================================== */
+@supports (min-height: 100dvh) {
+  .app-shell { min-height: 100dvh; }
+  .battle-pregame { min-height: calc(100dvh - 150px); }
+  .packs-view { min-height: calc(100dvh - 200px); }
+}
+body::before, body::after { transform: translateZ(0); }
+
+@media (max-width: 760px) {
+  /* ② fixed 层与毛玻璃减负 */
+  .topbar,
+  .ai-panel,
+  .card-box,
+  .wallet-bar,
+  .battle-dock,
+  .plate,
+  .pkmn-stage,
+  .battle-pregame {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .topbar {
+    background: rgba(13, 16, 30, 0.97);
+  }
+  body::after { display: none; }
+
+  /* ③ 重绘型无限动画全部停用(transform/opacity 类保留) */
+  .pack-shine,
+  .login-brand::before,
+  .gh-stars,
+  .gh-stars-2,
+  .gh-moon,
+  .brand-float,
+  .tcard-r-UR,
+  .tcard-r-UR::after,
+  .ur-rays,
+  .pack-rays,
+  .skeleton-card,
+  .mystery-ball,
+  .pregame-mon img,
+  .pkmn-card-image,
+  .gh-cta::after {
+    animation: none;
+  }
+  .gh-cta::after { display: none; }
+  .tcard-r-UR {
+    background:
+      linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+      linear-gradient(120deg, #d4af37, #fff3b0, #d4af37, #8a6d1d, #d4af37) border-box;
+    background-size: auto, 100% 100%;
+    animation: none;
+  }
+  .login-brand::before { opacity: 0.6; }
+}
