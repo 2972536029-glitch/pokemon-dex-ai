@@ -7,14 +7,15 @@ import LoginView from "./views/LoginView.jsx";
 import BattleView from "./views/BattleView.jsx";
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
+import HomeView from "./views/HomeView.jsx";
 import { useTheme } from "./hooks/useTheme.js";
 import "./views/splash.css";
 import "./views/views.css";
 
 function useHashRoute() {
-  const [route, setRoute] = useState(window.location.hash || "#/dex");
+  const [route, setRoute] = useState(window.location.hash || "#/home");
   useEffect(() => {
-    const onHash = () => setRoute(window.location.hash || "#/dex");
+    const onHash = () => setRoute(window.location.hash || "#/home");
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -58,13 +59,14 @@ function Header({ route, go }) {
   );
   return (
     <header className="topbar">
-      <button type="button" className="brand" onClick={() => go("#/dex")}>
+      <button type="button" className="brand" onClick={() => go("#/home")}>
         <span className="brand-ball" aria-hidden="true" />
         <span className="brand-name">
           宝可梦图鉴 <b>AI</b>
         </span>
       </button>
       <nav className="topbar-nav">
+        {link("#/home", "首页")}
         {link("#/dex", "图鉴")}
         {link("#/packs", "卡包商店")}
         {link("#/collection", "我的收藏")}
@@ -96,6 +98,7 @@ function Header({ route, go }) {
 }
 
 const TITLES = {
+  "#/home": "首页",
   "#/dex": "图鉴",
   "#/packs": "卡包商店",
   "#/collection": "我的收藏",
@@ -130,7 +133,8 @@ const Shell = () => {
   }, [me?.id]);
 
   let view;
-  if (route === "#/packs") view = <PacksView />;
+  if (route === "#/home") view = <HomeView go={go} />;
+  else if (route === "#/packs") view = <PacksView />;
   else if (route === "#/collection") view = <CollectionView onGoLogin={() => go("#/login")} onGoBattle={() => go("#/battle")} />;
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
@@ -150,8 +154,7 @@ const Shell = () => {
           onEnter={() => {
             // 白幕覆盖完成后调用:应用已在下方入场,白幕再缓缓揭开
             setEntered(true);
-            if (!me) go("#/login");
-            else go("#/dex");
+            go("#/home");
             setTimeout(() => setSplashGone(true), 950);
           }}
         />
