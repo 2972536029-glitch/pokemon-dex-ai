@@ -72,6 +72,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [resumed, setResumed] = useState(false);
   // 最近一次行动:失败重试按钮用(ref 避免重渲染依赖)
   const lastActionRef = useRef(null);
+  // playEvents 哨兵用:始终指向最新 battleId(闭包里的 battle 会过期)
+  const battleIdRef = useRef(null);
+  useEffect(() => {
+    battleIdRef.current = battle?.battleId ?? null;
+  }, [battle?.battleId]);
 
   useEffect(() => {
     if (!me) return;
@@ -92,7 +97,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   }, [me]);
 
   async function startBattle(mode) {
-    if (busy) return;
+    if (busy || playing) return;
     setBusy(true);
     setError(null);
     setReward(null);
@@ -115,7 +120,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   }
 
   async function forfeit() {
-    if (!battle || busy) return;
+    if (!battle?.battleId || busy) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
@@ -134,6 +139,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   // 服务端这类失败不会消费回合(事务回滚),所以客户端自动重试一次是安全的;
   // 仍失败则给出可点的重试按钮,而不是死路提示。
   const postTurn = async (action, attempt = 0) => {
+    if (!battleIdRef.current) return { ok: false, status: 0, body: { message: "战斗已结束" } };
     const res = await fetch(`/api/battle/${battle.battleId}/turn`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -177,9 +183,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   // ---- 回合动画编排器:逐个播放服务器事件 ----
   async function playEvents(events, finalState) {
     setPlaying(true);
+    const myBattleId = battle.battleId; // 哨兵:播放期间战斗被换掉则停止落状态
     const view = JSON.parse(JSON.stringify(battle.state));
 
     for (const ev of events) {
+      if (myBattleId !== battleIdRef.current) break; // 已被投降/重开/换场
       if (ev.kind === "move") {
         const actorSide = ev.actor;
         setLunge(actorSide);
@@ -208,7 +216,9 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
       }
     }
     setPlaying(false);
-    setBattle({ battleId: battle.battleId, state: finalState });
+    if (myBattleId === battleIdRef.current) {
+      setBattle({ battleId: battle.battleId, state: finalState });
+    }
   }
 
   // ---- 未登录 ----
@@ -226,6 +236,21 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   }
 
   // ---- 战斗中:竞技场 ----
+  // state 缺 userTeam/aiTeam(历史脏数据/接口异常)会让整页崩,降级回准备页
+  const s0 = battle?.state;
+  if (battle && !(s0?.userTeam?.length && s0?.aiTeam?.length)) {
+    // 自愈:丢弃残缺快照,回编队检查流程(渲染期直接置空,下一帧生效)
+    return (
+      <div className="view-narrow">
+        <div className="card-box center">
+          <p>战斗数据不完整,请重新开始对战。</p>
+          <button type="button" className="btn-primary" onClick={() => setBattle(null)}>
+            重新开始
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (battle) {
     const s = battle.state;
     const u = s.userTeam[s.activeUser];
