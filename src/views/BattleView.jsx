@@ -68,6 +68,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [error, setError] = useState(null);
   const [reward, setReward] = useState(null);
   const [resumed, setResumed] = useState(false);
+  // 最近一次行动:失败重试按钮用(ref 避免重渲染依赖)
+  const lastActionRef = useRef(null);
 
   useEffect(() => {
     if (!me) return;
@@ -126,19 +128,33 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // 瞬时 5xx(平台部署窗口/数据库冷启动)对用户表现为"战斗服务出了点问题"。
+  // 服务端这类失败不会消费回合(事务回滚),所以客户端自动重试一次是安全的;
+  // 仍失败则给出可点的重试按钮,而不是死路提示。
+  const postTurn = async (action, attempt = 0) => {
+    const res = await fetch(`/api/battle/${battle.battleId}/turn`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status >= 500 && attempt < 1) {
+      await sleep(1200);
+      return postTurn(action, attempt + 1);
+    }
+    return { ok: res.ok, status: res.status, body };
+  };
+
   async function postAction(action) {
     if (!battle || busy || playing) return;
+    lastActionRef.current = action;
+    setError(null);
     setBusy(true);
     setPlaying(true);
     setConfetti(false);
     try {
-      const res = await fetch(`/api/battle/${battle.battleId}/turn`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
+      const { ok, body } = await postTurn(action);
+      if (!ok) {
         setError(body?.message || "行动失败");
         return;
       }
@@ -313,7 +329,20 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
         {error && (
           <p className="form-error center" role="alert">
-            {error}
+            {error}{" "}
+            {lastActionRef.current && (
+              <button
+                type="button"
+                className="ai-retry"
+                disabled={busy || playing}
+                onClick={() => {
+                  setError(null);
+                  postAction(lastActionRef.current);
+                }}
+              >
+                重试
+              </button>
+            )}
           </p>
         )}
 

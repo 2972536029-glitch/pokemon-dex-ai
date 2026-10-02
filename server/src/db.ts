@@ -55,8 +55,21 @@ export async function q<T extends pg.QueryResultRow = pg.QueryResultRow>(
   }
 }
 
-/** Run fn inside a transaction; rolls back on throw. */
+/** Run fn inside a transaction; rolls back on throw.
+ * ONE retry on connection-level failure: a stale pooled client usually dies
+ * on BEGIN or the first query, before anything is written, so replaying fn on
+ * a fresh client is safe. Application errors are never retried. */
 export async function tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  try {
+    return await txOnce(fn);
+  } catch (err) {
+    if (!isConnectionError(err)) throw err;
+    console.warn("[db] tx connection-level failure, retrying once:", (err as Error).message);
+    return await txOnce(fn);
+  }
+}
+
+async function txOnce<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
