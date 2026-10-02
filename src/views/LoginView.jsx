@@ -1,5 +1,6 @@
 // 登录/注册:左侧品牌叙事,右侧表单。未登录访客的第一站。
 import { useState } from "react";
+import { artworkUrl } from "../shared/artwork.js";
 import { useAuth } from "../state/auth.jsx";
 
 export default function LoginView({ onDone }) {
@@ -29,6 +30,8 @@ export default function LoginView({ onDone }) {
   return (
     <div className="login-split">
       <div className="login-brand">
+        <img className="brand-float brand-float-1" src={artworkUrl(6)} alt="" aria-hidden="true" />
+        <img className="brand-float brand-float-2" src={artworkUrl(25)} alt="" aria-hidden="true" />
         <span className="brand-logo">
           宝可梦图鉴 <b>AI</b>
         </span>

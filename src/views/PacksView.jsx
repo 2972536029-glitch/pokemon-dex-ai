@@ -131,6 +131,14 @@ export default function PacksView() {
 
       {!me && <p className="hint center">登录后才能抽卡。未登录时可以浏览各卡包的概率公示。</p>}
 
+      {packs === null && (
+        <div className="packs-grid" aria-hidden="true">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="skeleton-card skeleton-pack" />
+          ))}
+        </div>
+      )}
+
       <div className="packs-grid">
         {(packs?.packs ?? []).map((p) => {
           const art = PACK_ART[p.id] ?? PACK_ART.basic;

@@ -48,7 +48,16 @@ const Message = ({ msg, onRetry }) => (
       )}
       {/* 错误态只渲染红框错误行一次(正文区跳过,避免同句出现两遍) */}
       {msg.text && msg.state !== "error" ? <div className="ai-text">{msg.text}</div> : null}
-      {msg.state === "streaming" && <span className="ai-cursor" aria-hidden="true" />}
+      {msg.state === "streaming" &&
+        (msg.text ? (
+          <span className="ai-cursor" aria-hidden="true" />
+        ) : (
+          <span className="ai-waiting" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        ))}
       {msg.state === "error" && (
         <div className="ai-err">
           <span role="alert">{msg.text}</span>

@@ -1,6 +1,6 @@
 // 对战竞技场:服务器权威结算,前端只渲染状态快照与按序播放的事件动画。
 // 结构:编队检查 → 开战(选对手模式) → 竞技场(铭牌/立绘对峙/招式坞/日志)。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
@@ -44,7 +44,9 @@ function Nameplate({ mon }) {
 /** 竞技场立绘:突进/受击动画 + 伤害数字 + 脚下光台(HP 只在铭牌显示,避免语义重复) */
 function ArenaMon({ mon, side, lunging, hit, popup }) {
   return (
-    <div className={`arena-mon arena-${side} ${lunging ? "is-lunging" : ""} ${hit ? "is-hit" : ""}`}>
+    <div
+      className={`arena-mon arena-${side} ${lunging ? "is-lunging" : ""} ${hit ? "is-hit" : ""} ${mon.hp === 0 ? "is-fainted" : ""}`}
+    >
       {popup && <div className={`dmg-popup ${popup.cls}`}>{popup.text}</div>}
       <div className="arena-platform" />
       <img className="arena-sprite" src={mon.artwork || mon.sprite} alt={mon.name} />
@@ -274,8 +276,11 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           </div>
 
           {finished && (
-            <div className="battle-verdict">
-              {s.status === "won" ? "🏆 你赢得了战斗!" : "💫 AI 对手获得了胜利…"}
+            <div className={`battle-verdict ${s.status === "won" ? "verdict-won" : "verdict-lost"}`}>
+              <span className="verdict-main">{s.status === "won" ? "🏆 胜利!" : "💫 惜败…"}</span>
+              <span className="verdict-sub">
+                {s.status === "won" ? "你赢得了这场对战" : "AI 对手获得了胜利,调整编队再战"}
+              </span>
               {reward > 0 && <span className="verdict-reward">+{reward} 图鉴币已入账</span>}
             </div>
           )}
@@ -404,7 +409,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
               </div>
             </div>
             <div className="pregame-actions">
-              <button type="button" className="btn-primary" onClick={() => startBattle("rule")} disabled={busy}>
+              {/* 层级:红色旗舰留给 AI 推演,规则对手用金色次级 */}
+              <button type="button" className="btn-gold" onClick={() => startBattle("rule")} disabled={busy}>
                 {busy ? "准备中…" : resumed ? "继续战斗" : "开始对战(规则对手)"}
               </button>
               <button type="button" className="btn-primary" onClick={() => startBattle("reasoned")} disabled={busy}>

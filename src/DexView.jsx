@@ -229,8 +229,9 @@ export default function DexView({ onContextChange }) {
               className="pkmn-search-btn"
               type="submit"
               disabled={loading}
+              aria-label="搜索"
             >
-              {loading ? "…" : "搜索"}
+              {loading ? "搜索中" : "搜索"}
             </button>
             {searchError && (
               <p className="pkmn-search-error" role="alert">

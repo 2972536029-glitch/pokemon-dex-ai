@@ -69,7 +69,7 @@ const TYPE_MOVES: Record<PType, Move> = {
 
 /** Official artwork URL (derived from dex id; PokeAPI sprite repo). */
 export const artworkFor = (id: number) =>
-  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+  `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${id}.png`;
 
 export interface BattleMon {
   cardId: number;

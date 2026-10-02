@@ -378,9 +378,9 @@
   font-size: 13px;
   font-weight: 800;
   color: var(--gold-hi);
-  background: rgba(255, 200, 60, 0.08);
-  border: 1px solid rgba(255, 200, 60, 0.35);
-  padding: 3px 12px;
+  background: transparent;
+  border: 1.5px solid rgba(255, 200, 60, 0.5);
+  padding: 2px 12px;
   border-radius: 999px;
 }
 .rates-list {
@@ -401,6 +401,7 @@
   align-items: center;
   gap: 5px;
   font-weight: 600;
+  white-space: nowrap;
 }
 .rate-dot {
   width: 8px;
@@ -425,8 +426,10 @@
   font-weight: 700;
   color: var(--text);
 }
-.pack-card .btn-primary {
+.pack-card .btn-primary,
+.pack-card .btn-gold {
   width: 100%;
+  margin-top: auto;
 }
 
 /* ---- 收藏:筛选 + 编队预览 ---- */
@@ -657,6 +660,41 @@
   font-size: 24px;
   font-weight: 900;
   letter-spacing: 2px;
+  position: relative;
+  z-index: 1;
+}
+/* 品牌区:缓慢流光 + 漂浮剪影(内容之上加暗压保证可读) */
+.login-brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255, 203, 5, 0.14), transparent 35%, rgba(42, 117, 187, 0.18) 60%, rgba(255, 90, 72, 0.14) 85%);
+  background-size: 260% 260%;
+  animation: brand-pan 16s ease-in-out infinite alternate;
+}
+@keyframes brand-pan {
+  from { background-position: 0% 0%; }
+  to { background-position: 100% 100%; }
+}
+.brand-float {
+  position: absolute;
+  z-index: 0;
+  opacity: 0.4;
+  filter: saturate(0.8) brightness(0.8) drop-shadow(0 14px 24px rgba(0, 0, 0, 0.5));
+  animation: arena-idle 4s ease-in-out infinite;
+}
+.brand-float-1 {
+  width: 150px;
+  right: -26px;
+  top: 12%;
+  transform: rotate(-8deg);
+}
+.brand-float-2 {
+  width: 84px;
+  right: 26%;
+  bottom: 14%;
+  opacity: 0.3;
+  animation-delay: 1.4s;
 }
 .login-brand .brand-logo b {
   color: var(--pikachu-yellow);
@@ -665,6 +703,12 @@
   margin: 8px 0 0;
   font-size: 26px;
   line-height: 1.3;
+  position: relative;
+  z-index: 1;
+}
+.login-brand .brand-points {
+  position: relative;
+  z-index: 1;
 }
 .login-brand .brand-points {
   display: flex;
@@ -768,6 +812,24 @@
   position: relative;
   overflow: hidden;
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.6), 0 0 60px rgba(255, 200, 60, 0.18);
+}
+/* 包装斜纹 + 烫金边:让包体读作包装而非色块 */
+.pack-visual::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0 10px, transparent 10px 20px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 30%);
+  pointer-events: none;
+}
+.pack-visual::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 240, 200, 0.4);
+  pointer-events: none;
 }
 .pack-visual.is-shaking {
   animation: pack-shake 0.5s ease-in-out infinite;
@@ -979,7 +1041,7 @@
   border: 1px solid var(--border);
   box-shadow: none;
 }
-/* 场地中线:地面透视感 */
+/* 场地中线 + 环境光:地面径向光/交叉聚光/远景雾 */
 .battle-arena::after {
   content: "";
   position: absolute;
@@ -989,6 +1051,17 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
   pointer-events: none;
+}
+.battle-arena::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(52% 30% at 50% 104%, rgba(124, 82, 255, 0.16), transparent 72%),
+    radial-gradient(34% 50% at 24% -8%, rgba(255, 224, 138, 0.15), transparent 72%),
+    radial-gradient(34% 50% at 76% -8%, rgba(95, 130, 246, 0.15), transparent 72%),
+    radial-gradient(70% 24% at 50% 96%, rgba(255, 255, 255, 0.05), transparent 75%);
 }
 .arena-plates {
   display: grid;
@@ -1095,6 +1168,16 @@
 .arena-mon {
   position: relative;
   text-align: center;
+}
+.arena-mon.is-fainted .arena-sprite {
+  animation: none;
+  opacity: 0.28;
+  filter: grayscale(0.9) brightness(0.55) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+  transform: scaleY(0.5) translateY(42px);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.3, 0.8, 0.4, 1.2), filter 0.6s ease;
+}
+.arena-mon.is-fainted .arena-platform {
+  opacity: 0.25;
 }
 .arena-mon.is-hit .arena-sprite {
   animation: arena-hit 0.5s ease;
@@ -1399,7 +1482,7 @@
   inset: 0;
   pointer-events: none;
   background:
-    conic-gradient(from 180deg at 50% -6%, transparent 40%, rgba(255, 224, 138, 0.14) 46%, rgba(255, 236, 180, 0.22) 50%, rgba(255, 224, 138, 0.14) 54%, transparent 60%),
+    conic-gradient(from 180deg at 50% -6%, transparent 39%, rgba(255, 224, 138, 0.20) 46%, rgba(255, 236, 180, 0.30) 50%, rgba(255, 224, 138, 0.20) 54%, transparent 61%),
     radial-gradient(58% 26% at 50% 102%, rgba(255, 255, 255, 0.07), transparent 70%);
 }
 .battle-pregame::after {
@@ -1412,7 +1495,7 @@
   font-weight: 900;
   font-style: italic;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.065);
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
@@ -1580,11 +1663,46 @@
   text-shadow: 0 0 12px rgba(255, 200, 60, 0.6);
 }
 .battle-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   text-align: center;
-  font-size: 22px;
+  padding: 22px 16px;
+  border-radius: 16px;
+  animation: view-in 0.4s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+.verdict-won {
+  background:
+    radial-gradient(70% 120% at 50% 0%, rgba(255, 214, 100, 0.20), transparent 70%),
+    var(--glass);
+  border: 1px solid rgba(255, 200, 60, 0.4);
+}
+.verdict-lost {
+  background:
+    radial-gradient(70% 120% at 50% 0%, rgba(123, 92, 255, 0.14), transparent 70%),
+    var(--glass);
+  border: 1px solid var(--glass-border);
+}
+.verdict-main {
+  font-size: 30px;
   font-weight: 900;
-  color: var(--text);
-  padding: 10px;
+  font-style: italic;
+  letter-spacing: 0.1em;
+}
+.verdict-won .verdict-main {
+  background: linear-gradient(180deg, #fff 10%, #ffd76a 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 22px rgba(255, 200, 60, 0.45));
+}
+.verdict-lost .verdict-main {
+  color: #b9c2d8;
+}
+.verdict-sub {
+  font-size: 14px;
+  color: var(--text-2);
 }
 .verdict-reward {
   margin-left: 12px;
@@ -2032,3 +2150,27 @@
   flex-direction: column;
   justify-content: center;
 }
+
+/* ---- 加载骨架屏:微光扫过,替代空白 ---- */
+.skeleton-card {
+  min-height: 300px;
+  border-radius: 20px;
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0.04) 30%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 70%),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  background-size: 240% 100%;
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+.skeleton-pack {
+  min-height: 340px;
+}
+@keyframes skeleton-sheen {
+  0% { background-position: 120% 0; }
+  100% { background-position: -60% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card { animation: none; }
+}
+/* 吸顶导航遮挡滚动内容:全局滚动预留 */
+html { scroll-padding-top: 76px; }

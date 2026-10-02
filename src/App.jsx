@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "./state/auth.jsx";
 import DexView from "./DexView.jsx";
 import PacksView from "./views/PacksView.jsx";
@@ -21,8 +21,32 @@ function useHashRoute() {
   return route;
 }
 
+// 余额数字滚动:变化时 600ms 缓动追到新值(rAF 只在动画期间跑)
+function useCountUp(value) {
+  const [display, setDisplay] = useState(value);
+  const fromRef = useRef(value);
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === value) return undefined;
+    const t0 = performance.now();
+    let raf;
+    const step = (t) => {
+      const p = Math.min(1, (t - t0) / 600);
+      const eased = 1 - (1 - p) ** 3;
+      const current = Math.round(from + (value - from) * eased);
+      fromRef.current = current;
+      setDisplay(current);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return display;
+}
+
 function Header({ route, go }) {
   const { me, logout } = useAuth();
+  const balance = useCountUp(me?.balance ?? 0);
   const link = (hash, label) => (
     <button
       type="button"
@@ -51,7 +75,7 @@ function Header({ route, go }) {
           <>
             <span className="user-chip" title="图鉴币余额">
               <span className="coin-ico" aria-hidden="true" />
-              {me.balance}
+              {balance}
             </span>
             <span className="user-name">
               <span className="avatar-bubble" aria-hidden="true">
@@ -71,11 +95,24 @@ function Header({ route, go }) {
   );
 }
 
+const TITLES = {
+  "#/dex": "图鉴",
+  "#/packs": "卡包商店",
+  "#/collection": "我的收藏",
+  "#/battle": "对战",
+  "#/login": "登录",
+};
+
 const Shell = () => {
   const route = useHashRoute();
   // 主题必须在 App 根部应用:只挂在单个视图里时,其余视图会回退浅色
   // (QA 实测:#/battle 准备页曾整页变白)。DexView 里的切换按钮仍独立工作。
   useTheme();
+  // 浏览器标签页标题跟随视图
+  useEffect(() => {
+    const view = TITLES[route];
+    document.title = view ? `${view} · 宝可梦图鉴 AI` : "宝可梦图鉴 AI";
+  }, [route]);
   const go = (hash) => {
     window.location.hash = hash;
   };

@@ -115,8 +115,22 @@
   width: 100%;
   height: 32vh;
 }
+.gh-hills::after { pointer-events: none; }
 .gh-hills-far path { fill: #241a3e; opacity: 0.9; }
 .gh-hills-near path { fill: #120d24; }
+/* 第三层雾谷 + 山脊微高光:软化死黑波浪边缘 */
+.gh-hills::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46%;
+  background:
+    linear-gradient(180deg, transparent, rgba(10, 8, 22, 0.55) 70%),
+    radial-gradient(80% 60% at 50% 118%, rgba(110, 42, 60, 0.35), transparent 70%);
+}
+.gh-hills-near { filter: drop-shadow(0 -2px 6px rgba(255, 170, 120, 0.10)); }
 .gh-hills-far { animation: gh-hills-drift 24s ease-in-out infinite alternate; }
 @keyframes gh-hills-drift {
   from { transform: translateX(0); }

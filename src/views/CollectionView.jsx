@@ -151,6 +151,13 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
       </div>
 
       {cards && cards.length === 0 && <p className="hint center">还没有卡牌——去卡包商店抽一包吧。</p>}
+      {cards === null && (
+        <div className="collection-grid" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="skeleton-card" />
+          ))}
+        </div>
+      )}
       <div className="collection-grid">
         {shown.map((c) => {
           const picked = team.includes(c.id);
