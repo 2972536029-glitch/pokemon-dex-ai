@@ -98,7 +98,7 @@ export default function HomeView({ go }) {
         <img className="home-hero-float" src={artworkUrl(149)} alt="" aria-hidden="true" />
         <p className="home-hero-eyebrow">POKÉMON DEX · AI</p>
         <h1 className="home-hero-title">
-          梦幻图鉴<span className="hero-dot">的</span>AI 冒险
+          梦幻图鉴<span className="hero-dot">的</span>宝可梦冒险
         </h1>
         <p className="home-hero-sub">查证 · 收藏 · 对战——这只图鉴会思考</p>
         <div className="home-hero-cta">
