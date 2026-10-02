@@ -68,8 +68,9 @@ export default function Splash({ onEnter, fading = false }) {
           <span>图</span>
           <span>鉴</span>
           <em>的</em>
-          <span>A</span>
-          <span>I</span>
+          <span>宝</span>
+          <span>可</span>
+          <span>梦</span>
           <span>冒</span>
           <span>险</span>
         </h1>

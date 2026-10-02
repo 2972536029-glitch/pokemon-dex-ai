@@ -244,6 +244,7 @@
 .gh-title span:nth-child(8) { animation-delay: 1.15s; }
 .gh-title span:nth-child(9) { animation-delay: 1.25s; }
 .gh-title span:nth-child(10) { animation-delay: 1.35s; }
+.gh-title span:nth-child(11) { animation-delay: 1.45s; }
 @keyframes gh-char-in {
   from { opacity: 0; transform: translateY(30px) rotate(4deg) scale(0.9); }
   to { opacity: 1; transform: translateY(0) rotate(0deg) scale(1); }
