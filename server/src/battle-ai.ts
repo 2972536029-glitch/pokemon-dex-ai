@@ -86,12 +86,27 @@ export async function chooseAiActionReasoned(
 
   if (!GLM_CONFIG.apiKey) throw new Error("model unavailable");
   const signalAny = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
+  // GLM 上游偶发 5xx/断流:重试一次(预算内),仍失败才走规则回退
+  let llmAttempt = 0;
 
-  const raw = await chatComplete(buildMessages(state), {
-    signal: signalAny,
-    maxTokens: 160,
-    temperature: 0.4,
-  });
+
+  const askModel = () =>
+    chatComplete(buildMessages(state), {
+      signal: signalAny,
+      maxTokens: 160,
+      temperature: 0.4,
+    });
+  // GLM 上游偶发 5xx/断流:静默重试一次(12s 预算内),仍失败由调用方回退规则
+  let raw: string;
+  try {
+    raw = await askModel();
+  } catch (err: any) {
+    if (llmAttempt++ === 0 && !(err?.name === "TimeoutError" || err?.name === "AbortError")) {
+      raw = await askModel();
+    } else {
+      throw err;
+    }
+  }
 
   const jsonText = raw.replace(/```json|```/g, "").trim();
   const start = jsonText.indexOf("{");
