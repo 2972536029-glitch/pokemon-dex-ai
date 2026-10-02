@@ -66,3 +66,11 @@
 - 描述:未来新增 .env.production 等不会被忽略
 - 修法:改 .env* 并配 !.env.example
 - 状态:已修复(799c86e,QA 复核销项确认;QA 备注:原第 11 行残留纯空格行,无害)
+
+## QA-033 [P0] wallet_tx CHECK 约束拒绝 kind='battle' —— 每次对战获胜必 500
+- 位置:server/src/schema.ts(建表 CHECK)+ routes-battle.ts:245(获胜奖励插入)
+- 发现方式:用户报错后经 CUA 遥控其浏览器 DevTools,控制台证实 /turn 500 ×N;再经 Vercel 面板运行时日志展开拿到完整栈:wallet_tx_kind_check 违约
+- 根因:v1.2 加对战奖励时用 kind='battle' 写 wallet_tx,但建表 CHECK 只有 ('signup','daily','gacha');获胜→奖励插入→约束拒绝→事务回滚→500(重试同因再炸)
+- 修法:CREATE TABLE 补 'battle';迁移段幂等 DROP+ADD 约束;本地库验证 INSERT kind='battle' 成功
+- 状态:已修复(见 commit,QA-033 待复核)
+- 教训:发奖路径从未被 E2E 覆盖(探测号从未获胜过),检查约束这类 DDL 逻辑改代码时必须同步审

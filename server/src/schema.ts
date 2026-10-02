@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS wallet_tx (
   id            BIGSERIAL PRIMARY KEY,
   user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   amount        INTEGER NOT NULL,          -- signed: negative = spend
-  kind          TEXT NOT NULL CHECK (kind IN ('signup','daily','gacha')),
+  kind          TEXT NOT NULL CHECK (kind IN ('signup','daily','gacha','battle')),
   detail        TEXT NOT NULL DEFAULT '',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -93,6 +93,9 @@ CREATE INDEX IF NOT EXISTS idx_battles_user_active ON battles(user_id, status);
 -- migrations for tables created before these lines existed
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS zh_name TEXT;
 DROP INDEX IF EXISTS idx_user_cards_user; -- redundant with PK prefix (QA-012)
+-- v1.4:对战胜利奖励引入 kind='battle',老库的 CHECK 不含它,获胜入账必炸(QA-033)
+ALTER TABLE wallet_tx DROP CONSTRAINT IF EXISTS wallet_tx_kind_check;
+ALTER TABLE wallet_tx ADD CONSTRAINT wallet_tx_kind_check CHECK (kind IN ('signup','daily','gacha','battle'));
 ALTER TABLE gacha_orders DROP CONSTRAINT IF EXISTS gacha_orders_pkey;
 ALTER TABLE gacha_orders ADD PRIMARY KEY (user_id, order_id);
 `;
