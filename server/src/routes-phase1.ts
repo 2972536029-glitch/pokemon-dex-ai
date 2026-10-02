@@ -145,7 +145,7 @@ export function mountPhase1(): express.Router {
     }
     try {
       const orderId = String(req.body?.orderId ?? "");
-      res.json(await drawCard({ userId: user.id, packId: String(req.params.id), orderId }));
+      res.json(await drawCard({ userId: user.id, username: user.username, packId: String(req.params.id), orderId }));
     } catch (err: any) {
       if (err instanceof GachaError) {
         res.status(err.status).json({ error: "gacha_failed", message: err.message });

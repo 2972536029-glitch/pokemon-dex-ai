@@ -74,6 +74,7 @@ export async function walletHistory(userId: number) {
 
 interface DrawInput {
   userId: number;
+  username?: string;
   packId: string;
   orderId: string;
 }
@@ -133,7 +134,42 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
   }
 }
 
+/**
+ * 无限金币测试号:UNLIMITED_USER_IDS(环境变量,逗号分隔 user id)里的用户
+ * 抽卡不扣币、余额不足也能抽。ID 通过环境变量配置而非硬编码用户名——
+ * 仓库是公开的,硬编码用户名等于任何人抢注后白嫖。
+ */
+function isUnlimited(input: { userId: number; username?: string }): boolean {
+  const raw = process.env.UNLIMITED_USER_IDS ?? "";
+  const list = raw.split(",").map((x) => x.trim()).filter(Boolean);
+  return list.includes(String(input.userId)) || (!!input.username && list.includes(input.username));
+}
+
 async function drawOnce(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
+  if (isUnlimited(input)) return drawOnceFree(input, pack, cardId);
+  return drawOnceCharged(input, pack, cardId);
+}
+
+/** 测试号通道:不扣币、不记扣费流水,其余(订单幂等/发卡)与正常通道一致。 */
+async function drawOnceFree(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
+  const balance = await tx(async (client) => {
+    const cur = await client.query<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
+    await client.query(
+      `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
+      [input.orderId, input.userId, pack.id, cardId]
+    );
+    await client.query(
+      `INSERT INTO user_cards (user_id, card_id, count) VALUES ($1, $2, 1)
+       ON CONFLICT (user_id, card_id) DO UPDATE SET count = user_cards.count + 1`,
+      [input.userId, cardId]
+    );
+    return cur.rows[0]?.balance ?? 0;
+  });
+  const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [cardId]);
+  return { card: card.rows[0], balance, replay: false };
+}
+
+async function drawOnceCharged(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
   const result = await tx(async (client) => {
     const upd = await client.query<{ balance: number }>(
       `UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING balance`,
