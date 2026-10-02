@@ -5,11 +5,11 @@ dist
 *.log
 
 # Tencent Cloud EdgeOne
-.env
+.env*
+!.env.example
 .edgeone/*
 .tef_dist/*
   
 # AI chat server
-.env.local
 server/dist
 .vercel

@@ -26,21 +26,20 @@ export function createApp() {
 
   app.get("/api/health", async (_req, res) => {
     let db = "ok";
-    let dbError: string | null = null;
     try {
       const { ensureSchema } = await import("./db.js");
       await ensureSchema();
       await (await import("./db.js")).q(`SELECT 1`);
     } catch (err: any) {
       db = "error";
-      dbError = (err?.message || "unknown").slice(0, 200);
+      // QA-030:错误细节只进日志,响应体不向未认证访客暴露内部信息
+      console.error("[health] db check failed:", err?.message);
     }
     res.json({
       ok: true,
       model: isMock ? "mock" : GLM_CONFIG.model,
       mock: isMock,
       db,
-      ...(dbError ? { dbError } : {}),
     });
   });
 

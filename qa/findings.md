@@ -44,3 +44,25 @@
 | QA-027 | P3 | 前端 | BattleView.jsx | resume 忽略请求的 mode(静默复用旧模式战斗) | 观察项:复用语义已由 resumed 标注 | 已记录(观察项) |
 | QA-028 | P3 | 文档 | docs/updates/v1.2-battle-sim.md | 设计稿与实现漂移(表结构/伤害声明核对/非法行动语义) | 补"实现偏差记录"节 | 已修复 |
 | QA-029 | P2 | 后端 | routes-battle.ts(QA-017 修复引入) | forfeit 只更新 status 列,漏改 state JSONB 内的 status → GET 返回 lost 战斗却自称 active(第三轮回归抓到) | jsonb_set 同步补丁 | 已修复(36/36 复验) |
+
+# M2 验收(首页大厅 + 无限金币测试号 + 战斗健化 + 移动端减负)· 2026-10-02
+
+> QA 全新上下文只读评审,靶子 docs/acceptance.md「M2」20 条:全部通过。
+> 历史抽查 QA-004/005/007/017/029 修复均在,无回归。以下为验收过程新发现:
+
+## QA-030 [P2] 后端 /api/health 公开泄漏 dbError 原文
+- 位置:server/src/app.ts:36-44
+- 描述:health 响应把数据库驱动错误信息截断 200 字符直出给未认证访客
+- 修法:响应只保留 db:"error",细节写日志
+- 状态:待修复
+
+## QA-031 [P3] 文档 design-v1.3.md:45 残留旧立绘 CDN 地址
+- 描述:仍记录 raw.githubusercontent,易误导后来者
+- 修法:加「已迁移 jsDelivr」注记
+- 状态:待修复
+
+## QA-032 [P3] .gitignore 未用 .env* 通配
+- 位置:.gitignore:8,13
+- 描述:未来新增 .env.production 等不会被忽略
+- 修法:改 .env* 并配 !.env.example
+- 状态:待修复
