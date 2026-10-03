@@ -21,7 +21,7 @@ import {
   sessionCookie,
   userFromRequest,
 } from "./auth.js";
-import { GachaError, PACKS, dailyBonus, drawCard, myCollection, walletHistory } from "./gacha.js";
+import { GachaError, PACKS, dailyBonus, drawCard, myCollection, pityStatus, walletHistory } from "./gacha.js";
 
 export function mountPhase1(): express.Router {
   const router = express.Router();
@@ -124,6 +124,15 @@ export function mountPhase1(): express.Router {
   }));
 
   // 公示接口:卡包定义 + 概率 + 池子大小,店页据此渲染概率表
+  router.get("/api/packs/pity", wrap(async (req, res) => {
+    const user = await userFromRequest(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized", message: "请先登录" });
+      return;
+    }
+    res.json(await pityStatus(user.id));
+  }));
+
   router.get("/api/packs", wrap(async (_req, res) => {
     res.json({
       packs: PACKS.map((p) => ({

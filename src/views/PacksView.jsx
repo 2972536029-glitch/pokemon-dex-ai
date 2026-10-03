@@ -23,6 +23,7 @@ export default function PacksView() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [dailyBonus, setDailyBonus] = useState(50);
+  const [pity, setPity] = useState(null); // {since_ur, remaining, limit}
   const [txOpen, setTxOpen] = useState(false);
   const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
@@ -30,6 +31,7 @@ export default function PacksView() {
   const skipRef = useRef(false);
 
   useEffect(() => {
+    if (me) fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
     fetch("/api/packs")
       .then((r) => r.json())
       .then((body) => {
@@ -101,6 +103,7 @@ export default function PacksView() {
       // Order settled — rotate the key so the NEXT purchase is a new order.
       delete intentIds.current[packId];
       await refresh(); // wallet balance changed
+      fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
     }
     setBusy(false);
     setDrawing(null);
@@ -140,6 +143,23 @@ export default function PacksView() {
         <p className="hint center" role="status">
           {notice}
         </p>
+      )}
+
+      {me && pity && (
+        <div className="pity-bar card-box" role="status">
+          <div className="pity-head">
+            <span className="pity-title">UR 保底进度</span>
+            <span className="pity-nums">
+              已垫 <b>{pity.since_ur}</b> 抽 · 还剩 <b>{pity.remaining}</b> 抽必出 UR
+            </span>
+          </div>
+          <div className="pity-track">
+            <div
+              className="pity-fill"
+              style={{ width: `${Math.min(100, (pity.since_ur / pity.limit) * 100)}%` }}
+            />
+          </div>
+        </div>
       )}
 
       {me && (

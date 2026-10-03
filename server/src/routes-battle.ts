@@ -83,6 +83,33 @@ export function mountBattle(): express.Router {
   }));
 
   // ---- start: build state from the saved team + a random AI team ------------
+  // ---- history:已结束对战的摘要 + 总胜负(战绩页/大厅用) ----
+  router.get("/api/battle/history", wrap(async (req, res) => {
+    const user = await userFromRequest(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized", message: "请先登录" });
+      return;
+    }
+    const { rows } = await q(
+      `SELECT status, state->>'mode' AS mode, state->>'turn' AS turns,
+              finished_at
+       FROM battles WHERE user_id = $1 AND status <> 'active'
+       ORDER BY finished_at DESC NULLS LAST LIMIT 20`,
+      [user.id]
+    );
+    const wins = rows.filter((r) => r.status === "won").length;
+    res.json({
+      wins,
+      losses: rows.length - wins,
+      battles: rows.map((r) => ({
+        status: r.status,
+        mode: r.mode,
+        turns: Number(r.turns) || 0,
+        finished_at: r.finished_at,
+      })),
+    });
+  }));
+
   router.post("/api/battle/start", wrap(async (req, res) => {
     const user = await requireUser(req);
     const mode = req.body?.mode === "reasoned" ? "reasoned" : "rule";

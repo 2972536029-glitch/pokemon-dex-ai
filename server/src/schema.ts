@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS wallet_tx (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS gacha_pity (
+  user_id      BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  since_ur     INTEGER NOT NULL DEFAULT 0              -- 距上次 UR 的抽数(全局,60 抽保底)
+);
+
 CREATE TABLE IF NOT EXISTS gacha_orders (
   order_id      TEXT NOT NULL,             -- client-generated idempotency key
   user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

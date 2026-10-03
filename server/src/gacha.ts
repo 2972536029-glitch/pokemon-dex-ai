@@ -3,6 +3,9 @@
 //   balance >= price, checked via rowCount) — no read-modify-write race.
 // - a draw is an ORDER (gacha_orders.id = client idempotency key): a retry
 //   with the same key replays the SAME card instead of charging twice.
+// - UR PITY (保底): a global counter ticks on every non-UR draw; at the
+//   threshold the roll is forced to UR. Counter lives in gacha_pity and is
+//   updated inside the draw transaction under a row lock.
 
 import crypto from "node:crypto";
 import { q, tx } from "./db.js";
@@ -85,6 +88,36 @@ export interface DrawResult {
   replay: boolean;
 }
 
+/** UR 保底:全局计数,60 抽内必出 UR(达到阈值的下一抽强制 UR) */
+export const PITY_LIMIT = 60;
+
+async function readPity(userId: number): Promise<number> {
+  const { rows } = await q<{ since_ur: number }>(
+    `SELECT since_ur FROM gacha_pity WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0]?.since_ur ?? 0;
+}
+
+/** 商店页保底进度:since = 已垫抽数,remaining = 距离必出 UR */
+export async function pityStatus(userId: number) {
+  const sinceUr = await readPity(userId);
+  return { since_ur: sinceUr, remaining: Math.max(0, PITY_LIMIT - sinceUr), limit: PITY_LIMIT };
+}
+
+/** 事务内:锁保底行(无则建),返回当前计数 */
+async function lockPity(client: any, userId: number): Promise<number> {
+  await client.query(
+    `INSERT INTO gacha_pity (user_id, since_ur) VALUES ($1, 0) ON CONFLICT (user_id) DO NOTHING`,
+    [userId]
+  );
+  const { rows } = await client.query(
+    `SELECT since_ur FROM gacha_pity WHERE user_id = $1 FOR UPDATE`,
+    [userId]
+  );
+  return rows[0]?.since_ur ?? 0;
+}
+
 export async function drawCard(input: DrawInput): Promise<DrawResult> {
   const pack = findPack(input.packId);
   if (!pack) throw new GachaError(404, "卡包不存在");
@@ -94,6 +127,7 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
   }
 
   // 1) Replay check outside the write path: same key → same card, no charge.
+  //    Replays must NOT touch the pity counter (they aren't new draws).
   const existing = await q<{ card_id: number }>(
     `SELECT card_id FROM gacha_orders WHERE order_id = $1 AND user_id = $2`,
     [input.orderId, input.userId]
@@ -106,16 +140,19 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
     return { card: card.rows[0], balance: bal.rows[0].balance, replay: true };
   }
 
-  // 2) Roll the rarity + pick the card BEFORE the transaction (pure RNG over
-  //    static catalog data — nothing in the tx depends on it).
-  const cardId = await rollCard(pack);
+  // 2) Pity: read the counter; at the threshold force UR. Roll + pick BEFORE
+  //    the transaction (pure RNG over static catalog data).
+  const sinceUr = await readPity(input.userId);
+  const forceRarity = sinceUr >= PITY_LIMIT - 1 ? ("UR" as const) : undefined;
+  const rolled = await rollCard(pack, forceRarity);
 
-  // 3) The order: charge (optimistic lock) → record order → grant card → log.
-  // TRUE concurrent duplicate of the same orderId: the second tx hits the
-  // orders PK and rolls back (no double charge) — we then serve the winner's
-  // card as a replay instead of a raw 500 (QA-004).
+  // 3) The order: pity update (row-locked) → charge (optimistic lock) →
+  //    record order → grant card → log. TRUE concurrent duplicate of the
+  //    same orderId: the second tx hits the orders PK and rolls back (no
+  //    double charge, pity update also rolls back) — we then serve the
+  //    winner's card as a replay instead of a raw 500 (QA-004).
   try {
-    return await drawOnce(input, pack, cardId);
+    return await drawOnce(input, pack, rolled);
   } catch (err: any) {
     if (err?.code === "23505") {
       const winner = await q<{ card_id: number }>(
@@ -135,8 +172,8 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
 }
 
 /**
- * 无限金币测试号:UNLIMITED_USER_IDS(环境变量,逗号分隔 user id)里的用户
- * 抽卡不扣币、余额不足也能抽。ID 通过环境变量配置而非硬编码用户名——
+ * 无限金币测试号:UNLIMITED_USER_IDS(环境变量,逗号分隔 user id/用户名)里的
+ * 用户抽卡不扣币、余额不足也能抽。值通过环境变量配置而非硬编码用户名——
  * 仓库是公开的,硬编码用户名等于任何人抢注后白嫖。
  */
 function isUnlimited(input: { userId: number; username?: string }): boolean {
@@ -145,14 +182,33 @@ function isUnlimited(input: { userId: number; username?: string }): boolean {
   return list.includes(String(input.userId)) || (!!input.username && list.includes(input.username));
 }
 
-async function drawOnce(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
-  if (isUnlimited(input)) return drawOnceFree(input, pack, cardId);
-  return drawOnceCharged(input, pack, cardId);
+async function drawOnce(
+  input: DrawInput,
+  pack: PackDef,
+  rolled: { id: number; rarity: "C" | "R" | "UR" }
+): Promise<DrawResult> {
+  if (isUnlimited(input)) return drawOnceFree(input, pack, rolled);
+  return drawOnceCharged(input, pack, rolled);
 }
 
-/** 测试号通道:不扣币、不记扣费流水,其余(订单幂等/发卡)与正常通道一致。 */
-async function drawOnceFree(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
+/** UR 出现时清零计数,否则 +1(两通道共用,事务内执行) */
+async function bumpPity(client: any, userId: number, rarity: "C" | "R" | "UR") {
+  await client.query(
+    `UPDATE gacha_pity SET since_ur = CASE WHEN $2 = 'UR' THEN 0 ELSE since_ur + 1 END WHERE user_id = $1`,
+    [userId, rarity]
+  );
+}
+
+/** 测试号通道:不扣币、不记扣费流水,其余(保底/订单幂等/发卡)与正常通道一致。 */
+async function drawOnceFree(
+  input: DrawInput,
+  pack: PackDef,
+  rolled: { id: number; rarity: "C" | "R" | "UR" }
+): Promise<DrawResult> {
+  const cardId = rolled.id;
   const balance = await tx(async (client) => {
+    await lockPity(client, input.userId);
+    await bumpPity(client, input.userId, rolled.rarity);
     const cur = await client.query<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
     await client.query(
       `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
@@ -169,8 +225,15 @@ async function drawOnceFree(input: DrawInput, pack: PackDef, cardId: number): Pr
   return { card: card.rows[0], balance, replay: false };
 }
 
-async function drawOnceCharged(input: DrawInput, pack: PackDef, cardId: number): Promise<DrawResult> {
+async function drawOnceCharged(
+  input: DrawInput,
+  pack: PackDef,
+  rolled: { id: number; rarity: "C" | "R" | "UR" }
+): Promise<DrawResult> {
+  const cardId = rolled.id;
   const result = await tx(async (client) => {
+    // 保底行先锁:同用户并发抽卡在此串行化,计数不漂移
+    await lockPity(client, input.userId);
     const upd = await client.query<{ balance: number }>(
       `UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING balance`,
       [pack.price, input.userId]
@@ -178,6 +241,7 @@ async function drawOnceCharged(input: DrawInput, pack: PackDef, cardId: number):
     if (upd.rowCount === 0) {
       throw new GachaError(402, "货币不足,先去赚点货币吧(每日登录 +50)");
     }
+    await bumpPity(client, input.userId, rolled.rarity);
     await client.query(
       `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
       [input.orderId, input.userId, pack.id, cardId]
@@ -198,16 +262,24 @@ async function drawOnceCharged(input: DrawInput, pack: PackDef, cardId: number):
   return { card: card.rows[0], balance: result, replay: false };
 }
 
-/** Rarity by disclosed weights, then uniform pick within that rarity pool. */
-async function rollCard(pack: PackDef): Promise<number> {
-  const roll = Math.random();
-  let acc = 0;
-  let rarity: "C" | "R" | "UR" = "C";
-  for (const r of ["UR", "R", "C"] as const) {
-    acc += pack.weights[r];
-    if (roll < acc) {
-      rarity = r;
-      break;
+/** Rarity by disclosed weights (or forced by pity), then uniform pick within that rarity pool. */
+async function rollCard(
+  pack: PackDef,
+  forceRarity?: "C" | "R" | "UR"
+): Promise<{ id: number; rarity: "C" | "R" | "UR" }> {
+  let rarity: "C" | "R" | "UR";
+  if (forceRarity) {
+    rarity = forceRarity;
+  } else {
+    const roll = Math.random();
+    let acc = 0;
+    rarity = "C";
+    for (const r of ["UR", "R", "C"] as const) {
+      acc += pack.weights[r];
+      if (roll < acc) {
+        rarity = r;
+        break;
+      }
     }
   }
   const { rows } = await q<{ id: number }>(
@@ -215,7 +287,7 @@ async function rollCard(pack: PackDef): Promise<number> {
     [rarity]
   );
   if (!rows[0]) throw new GachaError(500, `卡池异常:稀有度 ${rarity} 无卡`);
-  return rows[0].id;
+  return { id: rows[0].id, rarity };
 }
 
 export async function myCollection(userId: number) {

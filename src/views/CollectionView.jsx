@@ -98,6 +98,16 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
   return (
     <div className="view-wide">
       <h2 className="view-title">我的收藏({cards ? cards.length : "…"} 种)</h2>
+      <div className="dex-progress" role="status">
+        <span className="dex-progress-label">图鉴完成度</span>
+        <div className="dex-progress-track">
+          <div
+            className="dex-progress-fill"
+            style={{ width: `${Math.min(100, ((cards?.length ?? 0) / 1010) * 100)}%` }}
+          />
+        </div>
+        <span className="dex-progress-num">{cards?.length ?? 0} / 1010</span>
+      </div>
       {error && <p className="form-error">{error}</p>}
 
       <div className="team-preview">

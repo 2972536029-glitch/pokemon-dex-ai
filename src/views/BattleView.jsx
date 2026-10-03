@@ -70,6 +70,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [error, setError] = useState(null);
   const [reward, setReward] = useState(null);
   const [resumed, setResumed] = useState(false);
+  const [history, setHistory] = useState(null); // 战绩:{wins, losses, battles}
   // 最近一次行动:失败重试按钮用(ref 避免重渲染依赖)
   const lastActionRef = useRef(null);
   // playEvents 哨兵用:始终指向最新 battleId(闭包里的 battle 会过期)
@@ -80,8 +81,10 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
   useEffect(() => {
     if (!me) return;
-    Promise.all([fetch("/api/battle/team"), fetch("/api/battle/active"), fetch("/api/collection")])
-      .then(async ([tRes, aRes, cRes]) => {
+    Promise.all([fetch("/api/battle/team"), fetch("/api/battle/active"), fetch("/api/collection"), fetch("/api/battle/history")])
+      .then(async ([tRes, aRes, cRes, hRes]) => {
+        const hBody = await hRes.json().catch(() => null);
+        if (hBody && typeof hBody.wins === "number") setHistory(hBody);
         const tBody = await tRes.json();
         const aBody = await aRes.json();
         const cBody = await cRes.json();
@@ -121,6 +124,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
   async function forfeit() {
     if (!battle?.battleId || busy) return;
+    if (!window.confirm("确定投降?这场对战将判负结束。")) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/battle/${battle.battleId}/forfeit`, { method: "POST" });
@@ -442,6 +446,25 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                 {busy ? "准备中…" : "开始对战(AI 推演)"}
               </button>
             </div>
+            {history && (
+              <details className="battle-history home-me-cell" style={{ padding: "12px 18px", borderRadius: 14 }}>
+                <summary>
+                  战绩:<b style={{ color: "var(--gold-hi)" }}>{history.wins} 胜 {history.losses} 负</b>
+                  (胜率 {history.wins + history.losses > 0 ? Math.round((history.wins / (history.wins + history.losses)) * 100) : 0}%)
+                </summary>
+                <div className="history-list">
+                  {history.battles.slice(0, 8).map((b, i) => (
+                    <div key={i} className={`history-row ${b.status === "won" ? "is-won" : "is-lost"}`}>
+                      <span>{b.status === "won" ? "胜" : "负"}</span>
+                      <span>{b.mode === "reasoned" ? "AI 推演" : "规则对手"}</span>
+                      <span>{b.turns} 回合</span>
+                      <span>{b.finished_at ? new Date(b.finished_at).toLocaleDateString("zh-CN") : ""}</span>
+                    </div>
+                  ))}
+                  {history.battles.length === 0 && <p className="hint">还没有已结束的对战。</p>}
+                </div>
+              </details>
+            )}
             <div className="pregame-teamstrip">
               <span className="ts-item">
                 队伍总 HP <b>{teamMons.reduce((n, c) => n + (c.stats?.hp ?? 0), 0)}</b>
