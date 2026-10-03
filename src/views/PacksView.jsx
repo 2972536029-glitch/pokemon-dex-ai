@@ -71,10 +71,11 @@ export default function PacksView() {
 
     // 动画编排与请求并行:先摇晃 1.5s 再炸开,请求完成 + 动画播完才揭晓
     const choreography = (async () => {
-      await sleep(1900);
+      await sleep(1300);
       if (!skipRef.current) setStage("burst");
       await sleep(650);
-      if (!skipRef.current) setStage("reveal");
+      if (!skipRef.current) setStage("converge");
+      await sleep(1900);
     })();
 
     const request = (async () => {
@@ -285,6 +286,25 @@ export default function PacksView() {
             <>
               <div className="pack-flash" />
               <div className="pack-shockwave" aria-hidden="true" />
+            </>
+          )}
+          {/* 方舟式暗场汇聚:扫描线掠过 → 竖直光缝绽开 → 粒子向心汇聚 */}
+          {stage === "converge" && (
+            <>
+              <div className="ark-scanline" aria-hidden="true" />
+              <div className="ark-slit" aria-hidden="true" />
+              {Array.from({ length: 18 }, (_, i) => (
+                <span
+                  key={i}
+                  className="ark-mote"
+                  aria-hidden="true"
+                  style={{
+                    "--from-x": `${(i % 2 ? 1 : -1) * (120 + (i * 53) % 200)}px`,
+                    "--from-y": `${((i * 37) % 240) - 120}px`,
+                    "--delay": `${i * 55}ms`,
+                  }}
+                />
+              ))}
             </>
           )}
           {stage === "reveal" && result?.card && (
