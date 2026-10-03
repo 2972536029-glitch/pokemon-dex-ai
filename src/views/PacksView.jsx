@@ -23,6 +23,8 @@ export default function PacksView() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [dailyBonus, setDailyBonus] = useState(50);
+  const [txOpen, setTxOpen] = useState(false);
+  const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
   const [stage, setStage] = useState(null);
   const skipRef = useRef(false);
@@ -36,6 +38,17 @@ export default function PacksView() {
       })
       .catch(() => setPacks({ packs: [] }));
   }, []);
+
+  // 流水懒加载:第一次展开才请求
+  useEffect(() => {
+    if (!txOpen || !me || txList) return;
+    fetch("/api/wallet/tx")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((b) => setTxList(b.transactions ?? []))
+      .catch(() => setTxList([]));
+  }, [txOpen, me, txList]);
+
+  const KIND_LABEL = { signup: "注册奖励", daily: "每日登录", gacha: "抽卡", battle: "对战奖励" };
 
   const intentIds = useRef({}); // 幂等键:绑定购买意图(QA-005)
 
@@ -127,6 +140,28 @@ export default function PacksView() {
         <p className="hint center" role="status">
           {notice}
         </p>
+      )}
+
+      {me && (
+        <button type="button" className="wallet-tx-toggle" onClick={() => setTxOpen((v) => !v)}>
+          {txOpen ? "收起明细 ▲" : "钱包明细 ▼"}
+        </button>
+      )}
+      {txOpen && me && (
+        <div className="wallet-tx card-box" role="list">
+          {txList === null && <p className="hint center">加载中…</p>}
+          {txList !== null && txList.length === 0 && <p className="hint center">还没有流水记录。</p>}
+          {(txList ?? []).slice(0, 20).map((t) => (
+            <div key={t.id ?? t.created_at} className="wallet-tx-row">
+              <span className={`tx-kind tx-kind-${t.kind}`}>{KIND_LABEL[t.kind] ?? t.kind}</span>
+              <span className="tx-detail">{t.detail}</span>
+              <span className={`tx-amount ${t.amount >= 0 ? "is-plus" : "is-minus"}`}>
+                {t.amount >= 0 ? "+" : ""}
+                {t.amount}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       {!me && <p className="hint center">登录后才能抽卡。未登录时可以浏览各卡包的概率公示。</p>}

@@ -1463,8 +1463,7 @@
   background: rgba(255, 90, 72, 0.10);
 }
 
-/* 战前:编队预览(暗色玻璃,与全站同一氛围) */
-/* 战前页撑满视口高度,消灭下半屏死空间 */
+/* 战前页:撑满视口 + 聚光锥 + BATTLE 水印 + 暗色玻璃(与全站同一氛围) */
 .battle-pregame {
   display: flex;
   flex-direction: column;
@@ -1472,8 +1471,28 @@
   justify-content: center;
   gap: 30px;
   min-height: calc(100vh - 150px);
+  padding: 34px 30px;
   position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 70% at 18% 108%, rgba(255, 200, 60, 0.13), transparent 60%),
+    radial-gradient(ellipse 60% 70% at 82% 108%, rgba(95, 130, 246, 0.14), transparent 60%),
+    radial-gradient(1200px 500px at 50% -20%, rgba(93, 70, 214, 0.16), transparent 70%),
+    var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+}
+@supports (min-height: 100dvh) {
+  .battle-pregame { min-height: calc(100dvh - 150px); }
+}
+:root:not([data-theme="dark"]) .battle-pregame {
+  background:
+    radial-gradient(ellipse 60% 70% at 18% 108%, rgba(255, 203, 5, 0.14), transparent 60%),
+    radial-gradient(ellipse 60% 70% at 82% 108%, rgba(42, 117, 187, 0.12), transparent 60%),
+    var(--bg-card);
+  border: 1px solid var(--border);
 }
 /* 顶部聚光锥 + 地面反光带 + 背景水印 */
 .battle-pregame::before {
@@ -1503,24 +1522,6 @@
 .battle-pregame > * {
   position: relative;
   z-index: 1;
-}
-  background:
-    radial-gradient(ellipse 60% 70% at 18% 108%, rgba(255, 200, 60, 0.13), transparent 60%),
-    radial-gradient(ellipse 60% 70% at 82% 108%, rgba(95, 130, 246, 0.14), transparent 60%),
-    radial-gradient(1200px 500px at 50% -20%, rgba(93, 70, 214, 0.16), transparent 70%),
-    var(--glass);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
-  border-radius: 20px;
-  padding: 34px 30px;
-}
-:root:not([data-theme="dark"]) .battle-pregame {
-  background:
-    radial-gradient(ellipse 60% 70% at 18% 108%, rgba(255, 203, 5, 0.14), transparent 60%),
-    radial-gradient(ellipse 60% 70% at 82% 108%, rgba(42, 117, 187, 0.12), transparent 60%),
-    var(--bg-card);
-  border: 1px solid var(--border);
 }
 .pregame-title {
   text-align: center;
@@ -2536,3 +2537,125 @@ body::before, body::after { transform: translateZ(0); }
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ====================================================================
+   移动端商业级适配:底部导航 + 顶栏精简 + 布局降级
+   ==================================================================== */
+
+/* 视图懒加载占位 */
+.view-loading {
+  min-height: 60vh;
+}
+
+/* ---- 底部导航栏(≤760px 显示) ---- */
+.tabbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  /* 顶栏:隐藏导航链接与用户名(信息移至底栏/首页),保留品牌+金币+退出 */
+  .topbar { padding: 8px 12px; gap: 10px; }
+  .topbar-nav { display: none; }
+  .brand-name { font-size: 13px; }
+  .user-name { display: none; }
+  .nav-link.ghost { padding: 4px 10px; }
+
+  /* 底部导航栏 */
+  .tabbar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 60;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: rgba(10, 12, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .tabbar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 7px 0 6px;
+    border: none;
+    background: none;
+    color: rgba(200, 210, 230, 0.6);
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .tabbar-item .tabbar-icon { font-size: 18px; line-height: 1.2; }
+  .tabbar-item.is-active {
+    color: var(--gold-hi);
+  }
+  .tabbar-item.is-active .tabbar-icon {
+    filter: drop-shadow(0 0 8px rgba(255, 200, 60, 0.55));
+  }
+
+  /* 给固定底栏让位 */
+  .app-shell { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0)); }
+  .ai-fab { bottom: calc(66px + env(safe-area-inset-bottom, 0)); }
+  .ai-panel { bottom: calc(66px + env(safe-area-inset-bottom, 0)); height: min(520px, calc(100dvh - 150px)); }
+
+  /* 各页布局降级 */
+  .battle-arena { padding: 14px 10px; }
+  .arena-plates { grid-template-columns: 1fr; gap: 8px; }
+  .plate-ai { text-align: left; }
+  .turn-badge { justify-self: center; }
+  .arena-floor { min-height: 200px; }
+  .arena-sprite { width: 116px; height: 116px; }
+  .arena-platform { width: 140px; height: 26px; }
+  .battle-dock { grid-template-columns: 1fr; }
+  .moves { grid-template-columns: 1fr; }
+  .pkmn-stage { padding: 22px 12px; min-height: 480px; }
+  .pkmn-card-image-wrap { width: 190px; height: 190px; }
+  .pkmn-card-image { width: 165px; height: 165px; }
+  .pkmn-card { padding: 20px 14px 26px; }
+  .home-hero { padding: 34px 16px 30px; }
+  .view-wide, .view-narrow { padding: 0 10px; }
+}
+
+/* ---- 钱包流水明细 ---- */
+.wallet-tx-toggle {
+  align-self: center;
+  border: none;
+  background: none;
+  color: var(--gold-hi);
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  letter-spacing: 0.06em;
+}
+.wallet-tx-toggle:hover { text-shadow: 0 0 10px rgba(255, 200, 60, 0.5); }
+.wallet-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.wallet-tx-row {
+  display: grid;
+  grid-template-columns: 76px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+}
+.wallet-tx-row:last-child { border-bottom: none; }
+.tx-kind {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  text-align: center;
+}
+.tx-kind-battle { color: #ffd76a; background: rgba(255, 200, 60, 0.10); }
+.tx-detail { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-amount { font-weight: 800; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+.tx-amount.is-plus { color: #58e69b; }
+.tx-amount.is-minus { color: #ff8a7a; }

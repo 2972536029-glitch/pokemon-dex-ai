@@ -1,0 +1,17 @@
+{
+  "name": "宝可梦图鉴 AI",
+  "short_name": "图鉴AI",
+  "description": "AI 图鉴问答、卡牌收集与 AI 推演对战",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12141c",
+  "theme_color": "#12141c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

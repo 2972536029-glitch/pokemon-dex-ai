@@ -142,7 +142,20 @@ export default function HomeView({ go }) {
           </div>
           {daily ? (
             <button type="button" className="home-daily-card" onClick={() => go("#/dex")}>
-              <img src={daily.sprite} alt={daily.name} />
+              <img
+                src={daily.sprite}
+                alt={daily.name}
+                onError={(e) => {
+                  // 立绘加载失败回退链:jsDelivr → pokeapi.co 官方源 → 隐藏
+                  const img = e.currentTarget;
+                  if (!img.dataset.fb) {
+                    img.dataset.fb = "1";
+                    img.src = `https://pokeapi.co/media/sprites/pokemon/other/official-artwork/${daily.id}.png`;
+                  } else {
+                    img.style.display = "none";
+                  }
+                }}
+              />
               <span className="home-daily-no">No.{String(daily.id).padStart(4, "0")}</span>
               <span className="home-daily-name">{daily.name}</span>
               <span className="home-daily-types">

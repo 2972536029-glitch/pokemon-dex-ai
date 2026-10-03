@@ -1,16 +1,38 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "./state/auth.jsx";
-import DexView from "./DexView.jsx";
-import PacksView from "./views/PacksView.jsx";
-import CollectionView from "./views/CollectionView.jsx";
-import LoginView from "./views/LoginView.jsx";
-import BattleView from "./views/BattleView.jsx";
+// 路由级代码分割:首页/开屏保持首包,业务视图按需加载(首屏体积减半)
+const HomeView = lazy(() => import("./views/HomeView.jsx"));
+const DexView = lazy(() => import("./DexView.jsx"));
+const PacksView = lazy(() => import("./views/PacksView.jsx"));
+const CollectionView = lazy(() => import("./views/CollectionView.jsx"));
+const LoginView = lazy(() => import("./views/LoginView.jsx"));
+const BattleView = lazy(() => import("./views/BattleView.jsx"));
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
-import HomeView from "./views/HomeView.jsx";
 import { useTheme } from "./hooks/useTheme.js";
 import "./views/splash.css";
 import "./views/views.css";
+
+// 视图崩溃兜底:商业底线是任何单页异常都不能白屏整站
+class ViewErrorBoundary extends Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="view-narrow">
+          <div className="card-box center">
+            <p>这个页面出了点问题。</p>
+            <button type="button" className="btn-primary" onClick={() => this.setState({ failed: false })}>
+              重试
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function useHashRoute() {
   const [route, setRoute] = useState(window.location.hash || "#/home");
@@ -145,9 +167,33 @@ const Shell = () => {
       <Header route={route} go={go} />
       {/* key=route:切视图时重挂载,触发 view-in 过渡动画 */}
       <main className="view-frame" key={route}>
-        {view}
+        <ViewErrorBoundary>
+          <Suspense fallback={<div className="view-loading" aria-label="加载中" />}>
+            {view}
+          </Suspense>
+        </ViewErrorBoundary>
       </main>
       <ChatPanel context={me ? dexContext : null} key={me ? `u${me.id}` : "guest"} />
+      {/* 移动端底部导航(桌面端由 CSS 隐藏) */}
+      <nav className="tabbar" aria-label="底部导航">
+        {[
+          ["#/home", "首页", "🏠"],
+          ["#/dex", "图鉴", "📖"],
+          ["#/packs", "商店", "🎴"],
+          ["#/collection", "收藏", "🎒"],
+          ["#/battle", "对战", "⚔️"],
+        ].map(([hash, label, icon]) => (
+          <button
+            key={hash}
+            type="button"
+            className={route === hash ? "tabbar-item is-active" : "tabbar-item"}
+            onClick={() => go(hash)}
+          >
+            <span className="tabbar-icon" aria-hidden="true">{icon}</span>
+            <span className="tabbar-label">{label}</span>
+          </button>
+        ))}
+      </nav>
       {!splashGone && (
         <Splash
           fading={entered}
