@@ -30,6 +30,10 @@
   --glass-border: rgba(255, 255, 255, 0.09);
   --glow-gold: 0 0 18px rgba(255, 200, 60, 0.35);
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* 动效曲线体系:spring(回弹)/out(丝滑降速)/in(离场加速) */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 /* Dark theme — soft navy (Pokémon HOME style), toggled by <html data-theme="dark">. */

@@ -71,9 +71,9 @@ export default function PacksView() {
 
     // 动画编排与请求并行:先摇晃 1.5s 再炸开,请求完成 + 动画播完才揭晓
     const choreography = (async () => {
-      await sleep(1500);
+      await sleep(1900);
       if (!skipRef.current) setStage("burst");
-      await sleep(500);
+      await sleep(650);
       if (!skipRef.current) setStage("reveal");
     })();
 
@@ -261,7 +261,26 @@ export default function PacksView() {
             </div>
           )}
           {/* 放射光放在包体外面:包体 overflow:hidden 会把内嵌光芒裁掉 */}
-          {stage === "burst" && <div className="pack-rays" aria-hidden="true" />}
+          {stage === "burst" && (
+            <>
+              <div className="pack-rays" aria-hidden="true" />
+              <div className="pack-half pack-half-top" aria-hidden="true" style={{ background: (PACK_ART[drawing] ?? PACK_ART.basic).grad }} />
+              <div className="pack-half pack-half-bottom" aria-hidden="true" style={{ background: (PACK_ART[drawing] ?? PACK_ART.basic).grad }} />
+              {Array.from({ length: 14 }, (_, i) => (
+                <span
+                  key={i}
+                  className="pack-spark"
+                  aria-hidden="true"
+                  style={{
+                    "--angle": `${i * (360 / 14) + 8}deg`,
+                    "--dist": `${140 + (i % 4) * 48}px`,
+                    "--delay": `${i * 12}ms`,
+                    background: i % 2 ? "#ffd75e" : "#ffffff",
+                  }}
+                />
+              ))}
+            </>
+          )}
           {stage === "burst" && (
             <>
               <div className="pack-flash" />
