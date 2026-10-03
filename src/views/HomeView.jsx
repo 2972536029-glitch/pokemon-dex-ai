@@ -43,7 +43,7 @@ const ENTRIES = [
 export default function HomeView({ go }) {
   const { me } = useAuth();
   const [daily, setDaily] = useState(null);
-  const [stats, setStats] = useState(null); // { cards, teamSize }
+  const [stats, setStats] = useState(null); // { cards, kinds, team, wins, losses }
 
   // 今日精选:轻量拉取该 id 的属性(主接口不含属性会显示占位)
   useEffect(() => {
@@ -72,15 +72,18 @@ export default function HomeView({ go }) {
   useEffect(() => {
     if (!me) return undefined;
     let cancelled = false;
-    Promise.all([fetch("/api/collection"), fetch("/api/battle/team")])
-      .then(async ([cRes, tRes]) => {
+    Promise.all([fetch("/api/collection"), fetch("/api/battle/team"), fetch("/api/battle/history")])
+      .then(async ([cRes, tRes, hRes]) => {
         const c = await cRes.json();
         const t = await tRes.json().catch(() => ({}));
+        const h = await hRes.json().catch(() => ({}));
         if (!cancelled) {
           setStats({
             cards: (c.cards ?? []).length,
             kinds: (c.cards ?? []).reduce((n, x) => n + (x.count ?? 1), 0),
             team: (t.cardIds ?? []).length,
+            wins: typeof h.wins === "number" ? h.wins : null,
+            losses: typeof h.losses === "number" ? h.losses : null,
           });
         }
       })
@@ -192,8 +195,8 @@ export default function HomeView({ go }) {
                   <span>对战编队</span>
                 </div>
                 <div className="home-me-cell">
-                  <b>{stats.kinds}</b>
-                  <span>累计获得</span>
+                  <b>{stats.wins}<small> 胜</small></b>
+                  <span>{stats.losses} 负</span>
                 </div>
                 <button type="button" className="btn-gold home-me-cta" onClick={() => go("#/packs")}>
                   去抽卡扩充收藏
