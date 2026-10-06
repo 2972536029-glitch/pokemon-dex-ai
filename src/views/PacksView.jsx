@@ -15,6 +15,15 @@ const PACK_ART = {
   legend: { grad: "linear-gradient(150deg, #431f52 0%, #7a3fa0 50%, #d4af37 100%)", ball: "#f1d475" },
 };
 
+// converge 阶段的兜底推进:玩家 7 秒未点击则自动揭示
+function ArkAutoReveal({ onFire }) {
+  useEffect(() => {
+    const t = setTimeout(onFire, 7000);
+    return () => clearTimeout(t);
+  }, []);
+  return null;
+}
+
 export default function PacksView() {
   const { me, refresh } = useAuth();
   const [packs, setPacks] = useState(null);
@@ -28,6 +37,7 @@ export default function PacksView() {
   const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
   const [stage, setStage] = useState(null);
+  const [armed, setArmed] = useState(false); // 摇晃完毕,等待玩家点击拆包
   const skipRef = useRef(false);
 
   useEffect(() => {
@@ -70,12 +80,10 @@ export default function PacksView() {
     }
 
     // 动画编排与请求并行:先摇晃 1.5s 再炸开,请求完成 + 动画播完才揭晓
+    // 方舟式节奏:摇晃后停在"待拆"状态,等玩家点;converge 停在光缝,等玩家点揭示
     const choreography = (async () => {
       await sleep(1300);
-      if (!skipRef.current) setStage("burst");
-      await sleep(650);
-      if (!skipRef.current) setStage("converge");
-      await sleep(1900);
+      if (!skipRef.current) setArmed(true); // 摇晃完毕,可点击拆包
     })();
 
     const request = (async () => {
@@ -100,7 +108,8 @@ export default function PacksView() {
       setStage(null);
     } else {
       setResult(outcome);
-      setStage("reveal");
+      // 交互式仪式:reveal 由玩家点击推进(或 7s 兜底);只有跳过才直接揭晓
+      if (skipRef.current) setStage("reveal");
       // Order settled — rotate the key so the NEXT purchase is a new order.
       delete intentIds.current[packId];
       await refresh(); // wallet balance changed
@@ -112,6 +121,20 @@ export default function PacksView() {
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  // 方舟式交互:玩家点击推进仪式。pack(武装完成)→ burst;converge → reveal
+  function advanceCeremony() {
+    if (!stage || busy) return;
+    if (stage === "pack" && armed) {
+      setArmed(false);
+      setStage("burst");
+      setTimeout(() => {
+        if (!skipRef.current) setStage("converge");
+      }, 650);
+    } else if (stage === "converge" && result?.card) {
+      setStage("reveal");
+    }
   }
 
   async function claimDaily() {
@@ -250,7 +273,21 @@ export default function PacksView() {
       )}
 
       {stage && (
-        <div className={`pack-stage stage-${stage}`} role="status">
+        <div
+          className={`pack-stage stage-${stage} ${result?.card && (stage === "converge" || stage === "reveal") ? `ark-r-${result.card.rarity}` : ""} ${stage === "pack" && armed ? "is-armed" : ""}`}
+          role="status"
+          onClick={advanceCeremony}
+        >
+          {stage === "pack" && armed && (
+            <button type="button" className="ark-tap-hint" onClick={advanceCeremony}>
+              点击拆开
+            </button>
+          )}
+          {stage === "converge" && result?.card && (
+            <button type="button" className="ark-tap-hint" onClick={advanceCeremony}>
+              轻触屏幕 · 揭示卡牌
+            </button>
+          )}
           {(stage === "pack" || stage === "burst") && (
             <div
               className={`pack-visual ${stage === "burst" ? "is-burst" : "is-shaking"}`}
@@ -292,6 +329,7 @@ export default function PacksView() {
           {stage === "converge" && (
             <>
               <div className="ark-scanline" aria-hidden="true" />
+              <ArkAutoReveal onFire={() => setStage("reveal")} />
               <div className="ark-slit" aria-hidden="true" />
               {Array.from({ length: 18 }, (_, i) => (
                 <span
@@ -347,7 +385,7 @@ export default function PacksView() {
             </div>
           )}
           {stage === "pack" && (
-            <button type="button" className="btn-ghost pack-skip" onClick={() => (skipRef.current = true)}>
+            <button type="button" className="btn-ghost pack-skip" onClick={() => { skipRef.current = true; setArmed(false); setStage("reveal"); }}>
               跳过动画 »
             </button>
           )}

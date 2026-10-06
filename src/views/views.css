@@ -2935,3 +2935,82 @@ body::before, body::after { transform: translateZ(0); }
   25% { opacity: 1; }
   100% { transform: translate(0, 0) scale(0.2); opacity: 0; }
 }
+
+/* ====================================================================
+   方舟式稀有度染色:C=蓝 / R=亮青 / UR=金紫,驱动汇聚段全部光效
+   ==================================================================== */
+.pack-stage { --ark-glow: #6fb3e0; --ark-core: #d6ecff; --ark-halo: rgba(110, 160, 255, 0.4); }
+.pack-stage.ark-r-C  { --ark-glow: #6fb3e0; --ark-core: #d6ecff; --ark-halo: rgba(110, 170, 235, 0.4); }
+.pack-stage.ark-r-R  { --ark-glow: #45d8f5; --ark-core: #e1f7ff; --ark-halo: rgba(69, 216, 245, 0.5); }
+.pack-stage.ark-r-UR { --ark-glow: #ffd75e; --ark-core: #fff3c4; --ark-halo: rgba(255, 190, 60, 0.6); }
+
+/* 扫描线/光缝/粒子吃染色变量 */
+.pack-stage .ark-scanline {
+  background: linear-gradient(90deg, transparent, var(--ark-core), transparent);
+  box-shadow: 0 0 24px 6px var(--ark-halo);
+}
+.pack-stage .ark-slit {
+  background: linear-gradient(180deg, transparent, var(--ark-core) 18%, #fff 50%, var(--ark-core) 82%, transparent);
+  box-shadow: 0 0 30px 8px var(--ark-halo), 0 0 90px 30px var(--ark-halo);
+}
+.pack-stage .ark-mote { background: var(--ark-core); box-shadow: 0 0 8px 2px var(--ark-halo); }
+
+/* UR 专属:光缝更宽更炸,四周泛紫金边光,粒子更大 */
+.pack-stage.ark-r-UR .ark-slit {
+  width: 7px;
+  box-shadow: 0 0 40px 14px rgba(255, 200, 60, 0.75), 0 0 150px 60px rgba(160, 90, 255, 0.35);
+}
+.pack-stage.ark-r-UR .ark-mote {
+  width: 6px; height: 6px;
+  background: #ffe9a8;
+  box-shadow: 0 0 10px 3px rgba(255, 210, 90, 0.8);
+}
+.pack-stage.ark-r-UR {
+  animation: ark-ur-edge 1.6s ease-in-out infinite;
+}
+@keyframes ark-ur-edge {
+  0%, 100% { box-shadow: inset 0 0 80px rgba(255, 190, 60, 0.12); }
+  50% { box-shadow: inset 0 0 140px rgba(255, 190, 60, 0.3), inset 0 0 30px rgba(160, 90, 255, 0.2); }
+}
+
+/* R+:汇聚末段光缝呼吸加剧 */
+.pack-stage.ark-r-R .ark-slit,
+.pack-stage.ark-r-UR .ark-slit {
+  animation-duration: 1.5s;
+}
+
+/* ---- 交互提示(点击拆开 / 轻触揭示) ---- */
+.ark-tap-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(10, 14, 30, 0.55);
+  color: #eef4ff;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  padding: 10px 26px;
+  border-radius: 999px;
+  cursor: pointer;
+  animation: ark-hint-pulse 1.6s ease-in-out infinite;
+  backdrop-filter: blur(6px);
+  z-index: 6;
+}
+@keyframes ark-hint-pulse {
+  0%, 100% { opacity: 0.75; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+}
+.pack-stage.is-armed .pack-visual {
+  cursor: pointer;
+}
+
+/* UR 揭晓卡:金光扫过 */
+.pack-reveal-card.tcard-r-UR::before {
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 230, 150, 0.95) 48%, #fff 50%, rgba(255, 230, 150, 0.95) 52%, transparent 70%);
+}
+/* R 揭晓卡:青光 */
+.pack-reveal-card.tcard-r-R::before {
+  background: linear-gradient(100deg, transparent 30%, rgba(160, 235, 255, 0.9) 48%, #fff 50%, rgba(160, 235, 255, 0.9) 52%, transparent 70%);
+}
