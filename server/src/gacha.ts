@@ -15,15 +15,17 @@ export interface PackDef {
   id: string;
   name: string;
   price: number;
+  pity: number;
   weights: { C: number; R: number; UR: number };
 }
 
 // Disclosed rates — these exact numbers are served to the client and shown
 // on the shop page (概率公示). Rarity pools come from the seeded catalog.
+// pity = 各包独立的 UR 硬保底阈值(按 UR 率分层:率越低保底越长)
 export const PACKS: PackDef[] = [
-  { id: "basic", name: "基础包", price: 50, weights: { C: 0.86, R: 0.12, UR: 0.02 } },
-  { id: "advanced", name: "进阶包", price: 120, weights: { C: 0.6, R: 0.32, UR: 0.08 } },
-  { id: "legend", name: "传说包", price: 250, weights: { C: 0, R: 0.7, UR: 0.3 } },
+  { id: "basic", name: "基础包", price: 50, pity: 60, weights: { C: 0.86, R: 0.12, UR: 0.02 } },
+  { id: "advanced", name: "进阶包", price: 120, pity: 30, weights: { C: 0.6, R: 0.32, UR: 0.08 } },
+  { id: "legend", name: "传说包", price: 250, pity: 10, weights: { C: 0, R: 0.7, UR: 0.3 } },
 ];
 
 export function findPack(id: string): PackDef | undefined {
@@ -88,32 +90,40 @@ export interface DrawResult {
   replay: boolean;
 }
 
-/** UR 保底:全局计数,60 抽内必出 UR(达到阈值的下一抽强制 UR) */
-export const PITY_LIMIT = 60;
+/** UR 保底:按卡包独立计数,各自阈值内必出 UR(阈值见 PACKS[].pity) */
 
-async function readPity(userId: number): Promise<number> {
+async function readPity(userId: number, packId: string): Promise<number> {
   const { rows } = await q<{ since_ur: number }>(
-    `SELECT since_ur FROM gacha_pity WHERE user_id = $1`,
-    [userId]
+    `SELECT since_ur FROM gacha_pity WHERE user_id = $1 AND pack_id = $2`,
+    [userId, packId]
   );
   return rows[0]?.since_ur ?? 0;
 }
 
-/** 商店页保底进度:since = 已垫抽数,remaining = 距离必出 UR */
+/** 商店页保底进度:按卡包返回各自计数 */
 export async function pityStatus(userId: number) {
-  const sinceUr = await readPity(userId);
-  return { since_ur: sinceUr, remaining: Math.max(0, PITY_LIMIT - sinceUr), limit: PITY_LIMIT };
+  const { rows } = await q<{ pack_id: string; since_ur: number }>(
+    `SELECT pack_id, since_ur FROM gacha_pity WHERE user_id = $1`,
+    [userId]
+  );
+  const byPack: Record<string, { since_ur: number; remaining: number; limit: number }> = {};
+  for (const pack of PACKS) {
+    const sinceUr = rows.find((r) => r.pack_id === pack.id)?.since_ur ?? 0;
+    byPack[pack.id] = { since_ur: sinceUr, remaining: Math.max(0, pack.pity - sinceUr), limit: pack.pity };
+  }
+  return byPack;
 }
 
 /** 事务内:锁保底行(无则建),返回当前计数 */
-async function lockPity(client: any, userId: number): Promise<number> {
+async function lockPity(client: any, userId: number, packId: string): Promise<number> {
   await client.query(
-    `INSERT INTO gacha_pity (user_id, since_ur) VALUES ($1, 0) ON CONFLICT (user_id) DO NOTHING`,
-    [userId]
+    `INSERT INTO gacha_pity (user_id, pack_id, since_ur) VALUES ($1, $2, 0)
+     ON CONFLICT (user_id, pack_id) DO NOTHING`,
+    [userId, packId]
   );
   const { rows } = await client.query(
-    `SELECT since_ur FROM gacha_pity WHERE user_id = $1 FOR UPDATE`,
-    [userId]
+    `SELECT since_ur FROM gacha_pity WHERE user_id = $1 AND pack_id = $2 FOR UPDATE`,
+    [userId, packId]
   );
   return rows[0]?.since_ur ?? 0;
 }
@@ -140,10 +150,10 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
     return { card: card.rows[0], balance: bal.rows[0].balance, replay: true };
   }
 
-  // 2) Pity: read the counter; at the threshold force UR. Roll + pick BEFORE
-  //    the transaction (pure RNG over static catalog data).
-  const sinceUr = await readPity(input.userId);
-  const forceRarity = sinceUr >= PITY_LIMIT - 1 ? ("UR" as const) : undefined;
+  // 2) Pity: read THIS pack's counter; at its threshold force UR. Roll + pick
+  //    BEFORE the transaction (pure RNG over static catalog data).
+  const sinceUr = await readPity(input.userId, pack.id);
+  const forceRarity = sinceUr >= pack.pity - 1 ? ("UR" as const) : undefined;
   const rolled = await rollCard(pack, forceRarity);
 
   // 3) The order: pity update (row-locked) → charge (optimistic lock) →
@@ -191,11 +201,12 @@ async function drawOnce(
   return drawOnceCharged(input, pack, rolled);
 }
 
-/** UR 出现时清零计数,否则 +1(两通道共用,事务内执行) */
-async function bumpPity(client: any, userId: number, rarity: "C" | "R" | "UR") {
+/** UR 出现时清零该包计数,否则 +1(两通道共用,事务内执行) */
+async function bumpPity(client: any, userId: number, packId: string, rarity: "C" | "R" | "UR") {
   await client.query(
-    `UPDATE gacha_pity SET since_ur = CASE WHEN $2 = 'UR' THEN 0 ELSE since_ur + 1 END WHERE user_id = $1`,
-    [userId, rarity]
+    `UPDATE gacha_pity SET since_ur = CASE WHEN $3 = 'UR' THEN 0 ELSE since_ur + 1 END
+     WHERE user_id = $1 AND pack_id = $2`,
+    [userId, packId, rarity]
   );
 }
 
@@ -207,8 +218,8 @@ async function drawOnceFree(
 ): Promise<DrawResult> {
   const cardId = rolled.id;
   const balance = await tx(async (client) => {
-    await lockPity(client, input.userId);
-    await bumpPity(client, input.userId, rolled.rarity);
+    await lockPity(client, input.userId, pack.id);
+    await bumpPity(client, input.userId, pack.id, rolled.rarity);
     const cur = await client.query<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
     await client.query(
       `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
@@ -232,8 +243,8 @@ async function drawOnceCharged(
 ): Promise<DrawResult> {
   const cardId = rolled.id;
   const result = await tx(async (client) => {
-    // 保底行先锁:同用户并发抽卡在此串行化,计数不漂移
-    await lockPity(client, input.userId);
+    // 保底行先锁:同用户同包并发抽卡在此串行化,计数不漂移
+    await lockPity(client, input.userId, pack.id);
     const upd = await client.query<{ balance: number }>(
       `UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING balance`,
       [pack.price, input.userId]
@@ -241,7 +252,7 @@ async function drawOnceCharged(
     if (upd.rowCount === 0) {
       throw new GachaError(402, "货币不足,先去赚点货币吧(每日登录 +50)");
     }
-    await bumpPity(client, input.userId, rolled.rarity);
+    await bumpPity(client, input.userId, pack.id, rolled.rarity);
     await client.query(
       `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
       [input.orderId, input.userId, pack.id, cardId]

@@ -32,7 +32,7 @@ export default function PacksView() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [dailyBonus, setDailyBonus] = useState(50);
-  const [pity, setPity] = useState(null); // {since_ur, remaining, limit}
+  const [pity, setPity] = useState(null); // { [packId]: {since_ur, remaining, limit} }
   const [txOpen, setTxOpen] = useState(false);
   const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
@@ -169,23 +169,6 @@ export default function PacksView() {
         </p>
       )}
 
-      {me && pity && (
-        <div className="pity-bar card-box" role="status">
-          <div className="pity-head">
-            <span className="pity-title">UR 保底进度</span>
-            <span className="pity-nums">
-              已垫 <b>{pity.since_ur}</b> 抽 · 还剩 <b>{pity.remaining}</b> 抽必出 UR
-            </span>
-          </div>
-          <div className="pity-track">
-            <div
-              className="pity-fill"
-              style={{ width: `${Math.min(100, (pity.since_ur / pity.limit) * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       {me && (
         <button type="button" className="wallet-tx-toggle" onClick={() => setTxOpen((v) => !v)}>
           {txOpen ? "收起明细 ▲" : "钱包明细 ▼"}
@@ -249,6 +232,22 @@ export default function PacksView() {
                       </div>
                     ))}
                 </div>
+                {me && pity?.[p.id] && (
+                  <div className="pity-mini" role="status">
+                    <div className="pity-mini-head">
+                      <span>UR 保底 {pity[p.id].limit} 抽</span>
+                      <span>
+                        已垫 <b>{pity[p.id].since_ur}</b> 抽
+                      </span>
+                    </div>
+                    <div className="pity-mini-track">
+                      <div
+                        className="pity-mini-fill"
+                        style={{ width: `${Math.min(100, (pity[p.id].since_ur / pity[p.id].limit) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   className={p.id === "legend" ? "btn-gold" : "btn-primary"}

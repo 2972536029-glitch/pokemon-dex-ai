@@ -56,8 +56,10 @@ CREATE TABLE IF NOT EXISTS wallet_tx (
 );
 
 CREATE TABLE IF NOT EXISTS gacha_pity (
-  user_id      BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  since_ur     INTEGER NOT NULL DEFAULT 0              -- 距上次 UR 的抽数(全局,60 抽保底)
+  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pack_id      TEXT NOT NULL,
+  since_ur     INTEGER NOT NULL DEFAULT 0,             -- 距上次 UR 的抽数(按卡包独立)
+  PRIMARY KEY (user_id, pack_id)
 );
 
 CREATE TABLE IF NOT EXISTS gacha_orders (
@@ -101,6 +103,11 @@ DROP INDEX IF EXISTS idx_user_cards_user; -- redundant with PK prefix (QA-012)
 -- v1.4:对战胜利奖励引入 kind='battle',老库的 CHECK 不含它,获胜入账必炸(QA-033)
 ALTER TABLE wallet_tx DROP CONSTRAINT IF EXISTS wallet_tx_kind_check;
 ALTER TABLE wallet_tx ADD CONSTRAINT wallet_tx_kind_check CHECK (kind IN ('signup','daily','gacha','battle'));
+-- v1.7.1:保底改为按卡包独立(旧表是 user_id 单键;旧计数归入基础包——
+-- 该表仅上线一天且全是测试数据,语义重置可接受)
+ALTER TABLE gacha_pity ADD COLUMN IF NOT EXISTS pack_id TEXT NOT NULL DEFAULT 'basic';
+ALTER TABLE gacha_pity DROP CONSTRAINT IF EXISTS gacha_pity_pkey;
+ALTER TABLE gacha_pity ADD CONSTRAINT gacha_pity_pkey PRIMARY KEY (user_id, pack_id);
 ALTER TABLE gacha_orders DROP CONSTRAINT IF EXISTS gacha_orders_pkey;
 ALTER TABLE gacha_orders ADD PRIMARY KEY (user_id, order_id);
 `;
