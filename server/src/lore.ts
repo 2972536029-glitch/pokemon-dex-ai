@@ -90,6 +90,12 @@ function guardNumbers(text: string, facts: { heightM: number; weightKg: number; 
 export function mountLore(): express.Router {
   const router = express.Router();
 
+  // TEMP DEBUG (QA-033 验证用,验证完删除): 只返回长度与存在性,不泄值
+  router.get("/api/debug-pity-env", (_req, res) => {
+    const v = process.env.UNLIMITED_USER_IDS;
+    res.json({ set: v !== undefined, len: (v ?? "").length, matchesTest888: v === "test888" });
+  });
+
   router.get("/api/lore/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1 || id > 1010) {

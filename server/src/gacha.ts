@@ -88,6 +88,7 @@ export interface DrawResult {
   card: { id: number; name: string; zh_name: string | null; rarity: string; types: string[]; sprite: string | null; stats: { hp: number } | null };
   balance: number;
   replay: boolean;
+  __dbg?: Record<string, unknown>;
 }
 
 /** UR 保底:按卡包独立计数,各自阈值内必出 UR(阈值见 PACKS[].pity) */
@@ -152,6 +153,12 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
 
   // 2) Pity: read THIS pack's counter; at its threshold force UR. Roll + pick
   //    BEFORE the transaction (pure RNG over static catalog data).
+  const __dbg = {
+    envSet: !!process.env.UNLIMITED_USER_IDS,
+    envLen: (process.env.UNLIMITED_USER_IDS ?? "").length,
+    username: input.username ?? null,
+    unlimited: isUnlimited(input),
+  };
   const sinceUr = await readPity(input.userId, pack.id);
   const forceRarity = sinceUr >= pack.pity - 1 ? ("UR" as const) : undefined;
   const rolled = await rollCard(pack, forceRarity);
@@ -242,6 +249,12 @@ async function drawOnceCharged(
   rolled: { id: number; rarity: "C" | "R" | "UR" }
 ): Promise<DrawResult> {
   const cardId = rolled.id;
+  const __dbg = {
+    envSet: !!process.env.UNLIMITED_USER_IDS,
+    envLen: (process.env.UNLIMITED_USER_IDS ?? "").length,
+    username: input.username ?? null,
+    unlimited: isUnlimited(input),
+  };
   const result = await tx(async (client) => {
     // 保底行先锁:同用户同包并发抽卡在此串行化,计数不漂移
     await lockPity(client, input.userId, pack.id);
@@ -270,7 +283,7 @@ async function drawOnceCharged(
   });
 
   const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [cardId]);
-  return { card: card.rows[0], balance: result, replay: false };
+  return { card: card.rows[0], balance: result, replay: false, __dbg };
 }
 
 /** Rarity by disclosed weights (or forced by pity), then uniform pick within that rarity pool. */
