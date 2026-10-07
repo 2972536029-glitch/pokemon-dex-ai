@@ -194,8 +194,9 @@ export function mountPhase1(): express.Router {
         if (r.replay) replayCount++;
       } catch (err: any) {
         if (err instanceof GachaError && err.status === 402) {
-          // 每张子抽独立扣费,未抽的本就没扣——无需退款,如实报告 shortfall
+          // 每张子抽独立扣费,未抽的本就没扣——如实报告 shortfall
           shortfall = TEN - i;
+          console.log("[tenpull] 402 dbg:", JSON.stringify(err.__dbg ?? null));
           break;
         }
         throw err;

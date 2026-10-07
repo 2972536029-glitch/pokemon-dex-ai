@@ -34,6 +34,7 @@ export function findPack(id: string): PackDef | undefined {
 
 export class GachaError extends Error {
   status: number;
+  __dbg?: Record<string, unknown>;
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
@@ -263,7 +264,9 @@ async function drawOnceCharged(
       [pack.price, input.userId]
     );
     if (upd.rowCount === 0) {
-      throw new GachaError(402, "货币不足,先去赚点货币吧(每日登录 +50)");
+      const e = new GachaError(402, "货币不足,先去赚点货币吧(每日登录 +50)");
+      e.__dbg = __dbg;
+      throw e;
     }
     await bumpPity(client, input.userId, pack.id, rolled.rarity);
     await client.query(
