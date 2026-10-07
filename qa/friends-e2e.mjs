@@ -45,7 +45,7 @@ async function collectDistinct(user, jar, n) {
 }
 
 async function balance(jar) {
-  const r = await req("GET", "/api/auth/me", { jar });
+  const r = await req("GET", "/api/me", { jar });
   return r.json?.user?.balance ?? r.json?.balance ?? null;
 }
 
@@ -196,16 +196,19 @@ async function main() {
 
   // ---- F8 daily reward cap ---------------------------------------------------------
   let capped = false;
-  for (let i = 0; i < 12 && !capped; i++) {
+  let prev1 = bal1b, prev2 = bal2b;
+  for (let i = 0; i < 14 && !capped; i++) {
     const ch = await req("POST", `/api/friends/${f2id}/challenge`, { jar: "u1", body: { cardIds: teamIds } });
     if (ch.status !== 200) break;
     const bId = (await req("GET", "/api/friends/battles", { jar: "u2" })).json.incoming?.[0]?.id;
     const acc = await req("POST", `/api/friend-battles/${bId}/accept`, { jar: "u2", body: { cardIds: u2cards.slice(0, 3) } });
     if (acc.status !== 200) break;
     const x1 = await balance("u1"), x2 = await balance("u2");
-    const dx = new Set([x1 - bal1b, x2 - bal2b].filter((v) => v !== 0));
-    // after 10 rewarded battles/day, further battles must pay nothing
-    if (i >= 9 && dx.size === 0) capped = true;
+    // 逐场边际差:这一场的净入账(相对上一场,而非相对基线——累计差永远非零)
+    const marg = new Set([x1 - prev1, x2 - prev2].filter((v) => v !== 0));
+    if (i >= 10 && marg.size === 0) capped = true;
+    prev1 = x1;
+    prev2 = x2;
   }
   check("F8 每日奖励 10 场封顶", capped, "11th+ battle still paid");
 

@@ -2662,7 +2662,7 @@ body::before, body::after { transform: translateZ(0); }
     left: 0; right: 0; bottom: 0;
     z-index: 60;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr); /* v2.2 加好友后 6 项 */
     background: rgba(10, 12, 22, 0.96);
     backdrop-filter: blur(12px);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -3472,7 +3472,8 @@ body::before, body::after { transform: translateZ(0); }
 .fr-log {
   margin: 0 0 12px;
   padding-left: 18px;
-  max-height: 46vh;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   font-size: 13px;
   line-height: 1.75;
@@ -3503,20 +3504,28 @@ body::before, body::after { transform: translateZ(0); }
 }
 .fr-modal-box {
   width: min(640px, 94vw);
-  max-height: 86vh;
-  overflow: auto;
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-1, #101627);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 16px 18px;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
 }
+/* 网格自己滚,标题/页脚钉在弹窗两端(移动端页脚不再被埋) */
+.fr-modal-box .fr-section-title { flex-shrink: 0; }
 .fr-pick-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 2px;
 }
+.fr-modal-foot { flex-shrink: 0; }
 .fr-pick-cell {
   position: relative;
   display: flex;
@@ -3602,6 +3611,7 @@ body::before, body::after { transform: translateZ(0); }
 @media (max-width: 760px) {
   .fr-add { flex-direction: column; }
   .fr-row, .fr-trade-row { flex-wrap: wrap; }
+  .ts-link { white-space: nowrap; }
   .fr-row-actions { width: 100%; justify-content: flex-start; }
   .fr-pick-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
   .fr-pick-cell img { width: 50px; height: 50px; }

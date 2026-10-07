@@ -514,13 +514,14 @@ export function mountFriends(): express.Router {
       }
       const { state, winner } = await simulate(battleId, challengerCards, targetCards);
 
-      // Rewards: settle in this transaction; daily cap per account (anti-farm).
-      // Cap check tolerates a rare double-settle race — worst case one extra
-      // small reward, never a wrong balance.
+      // Rewards: settle in this transaction; rolling-24h cap per account
+      // (anti-farm). A rolling window instead of date_trunc('day') because the
+      // DB runs UTC — a calendar-day boundary silently never trips for a
+      // UTC+8 user (caught by E2E F8: battles paid past the 10th).
       const rewardable = async (uid: number) => {
         const r = await client.query<{ n: string }>(
           `SELECT COUNT(*) AS n FROM friend_battles
-           WHERE status = $2 AND id <> $3 AND finished_at >= date_trunc('day', now())
+           WHERE status = $2 AND id <> $3 AND finished_at >= now() - interval '24 hours'
              AND (challenger_uid = $1 OR target_uid = $1)`,
           [uid, FBATTLE_STATUS.FINISHED, battleId]);
         return Number(r.rows[0].n) < PVP_REWARD_DAILY_CAP;
