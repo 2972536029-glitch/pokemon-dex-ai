@@ -8,7 +8,7 @@
 // request body/query — that value is what AI tools are bound to as well.
 
 import express from "express";
-import { ensureSchema } from "./db.js";
+import { ensureSchema, q } from "./db.js";
 import {
   AUTH_CONSTANTS,
   clearSessionCookie,
@@ -163,6 +163,52 @@ export function mountPhase1(): express.Router {
       console.error("[packs] draw failed:", err);
       res.status(500).json({ error: "internal", message: "抽卡出了点问题,请重试" });
     }
+  }));
+
+  // ---- 十连:一次订单 = 10 张,子幂等键派生自订单号,复用单抽全链路 ----
+  router.post("/api/packs/:id/tenpull", wrap(async (req, res) => {
+    const user = await userFromRequest(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized", message: "请先登录" });
+      return;
+    }
+    const pack = PACKS.find((p) => p.id === req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: "not_found", message: "卡包不存在" });
+      return;
+    }
+    const orderId = String(req.body?.orderId ?? "");
+    if (!/^[a-zA-Z0-9-]{8,56}$/.test(orderId)) {
+      res.status(400).json({ error: "invalid order id", message: "invalid order id" });
+      return;
+    }
+    const TEN = 10;
+    const cards = [];
+    let replayCount = 0;
+    let shortfall = 0;
+    for (let i = 0; i < TEN; i++) {
+      const subKey = `${orderId}-s${i}`;
+      try {
+        const r = await drawCard({ userId: user.id, username: user.username, packId: pack.id, orderId: subKey });
+        cards.push(r.card);
+        if (r.replay) replayCount++;
+      } catch (err: any) {
+        if (err instanceof GachaError && err.status === 402) {
+          // 每张子抽独立扣费,未抽的本就没扣——无需退款,如实报告 shortfall
+          shortfall = TEN - i;
+          break;
+        }
+        throw err;
+      }
+    }
+    const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [user.id]);
+    res.json({
+      cards,
+      balance: bal.rows[0]?.balance ?? 0,
+      replay: replayCount === TEN && replayCount > 0,
+      replayCount,
+      shortfall,
+    });
   }));
 
   router.get("/api/collection", wrap(async (req, res) => {

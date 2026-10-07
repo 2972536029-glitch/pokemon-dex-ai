@@ -33,6 +33,7 @@ export default function PacksView() {
   const [notice, setNotice] = useState(null);
   const [dailyBonus, setDailyBonus] = useState(50);
   const [pity, setPity] = useState(null); // { [packId]: {since_ur, remaining, limit} }
+  const [tenResult, setTenResult] = useState(null); // {cards, shortfall}
   const [txOpen, setTxOpen] = useState(false);
   const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
   // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
@@ -134,6 +135,41 @@ export default function PacksView() {
       }, 650);
     } else if (stage === "converge" && result?.card) {
       setStage("reveal");
+    }
+  }
+
+  async function handleTenPull(packId) {
+    if (!me || busy) return;
+    setBusy(true);
+    setDrawing(packId);
+    setNotice(null);
+    try {
+      let base = intentIds.current[packId + "-t10"];
+      if (!base) {
+        try { base = crypto.randomUUID(); } catch { base = `t10-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
+        intentIds.current[packId + "-t10"] = base;
+      }
+      const res = await fetch(`/api/packs/${packId}/tenpull`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orderId: base }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setNotice(body?.message || "十连失败");
+        delete intentIds.current[packId + "-t10"];
+        return;
+      }
+      setTenResult({ cards: body.cards ?? [], shortfall: body.shortfall ?? 0, replay: body.replay });
+      setStage("grid");
+      delete intentIds.current[packId + "-t10"];
+      await refresh();
+      fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
+    } catch {
+      setNotice("网络异常,请重试");
+    } finally {
+      setBusy(false);
+      setDrawing(null);
     }
   }
 
@@ -248,14 +284,25 @@ export default function PacksView() {
                     </div>
                   </div>
                 )}
-                <button
-                  type="button"
-                  className={p.id === "legend" ? "btn-gold" : "btn-primary"}
-                  disabled={!me || busy}
-                  onClick={() => draw(p.id)}
-                >
-                  {drawing === p.id ? "开包中…" : me ? "购买并抽取" : "登录后可购买"}
-                </button>
+                <div className="pack-btn-row">
+                  <button
+                    type="button"
+                    className={p.id === "legend" ? "btn-gold" : "btn-primary"}
+                    disabled={!me || busy}
+                    onClick={() => draw(p.id)}
+                  >
+                    {drawing === p.id ? "开包中…" : me ? "购买并抽取" : "登录后可购买"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost pack-ten-btn"
+                    disabled={!me || busy}
+                    onClick={() => handleTenPull(p.id)}
+                    title={`十连价 ${p.price * 10} 币`}
+                  >
+                    {drawing === p.id ? "…" : "十连"}
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -343,6 +390,34 @@ export default function PacksView() {
                 />
               ))}
             </>
+          )}
+          {stage === "grid" && tenResult?.cards && (
+            <div className="ten-wrap">
+              <p className="ten-title">
+                {tenResult.shortfall > 0
+                  ? `金币只够 ${tenResult.cards.length} 抽,已入账`
+                  : tenResult.replay
+                    ? "十连重放(未重复扣费)"
+                    : "十连揭晓"}
+              </p>
+              <div className="ten-grid">
+                {tenResult.cards.map((c, i) => (
+                  <button
+                    key={`${c.id}-${i}`}
+                    type="button"
+                    className={`ten-cell ten-cell-${c.rarity}`}
+                    style={{ animationDelay: `${i * 90}ms` }}
+                    onClick={() => setTenResult((prev) => prev && { ...prev, focus: i })}
+                  >
+                    <img src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`} alt={c.name} loading="lazy" />
+                    <span className="ten-cell-rarity">{c.rarity}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn-gold pack-continue" onClick={() => { setTenResult(null); setStage(null); }}>
+                收下
+              </button>
+            </div>
           )}
           {stage === "reveal" && result?.card && (
             <div className="pack-reveal-wrap">

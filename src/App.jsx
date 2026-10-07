@@ -7,6 +7,7 @@ const PacksView = lazy(() => import("./views/PacksView.jsx"));
 const CollectionView = lazy(() => import("./views/CollectionView.jsx"));
 const LoginView = lazy(() => import("./views/LoginView.jsx"));
 const BattleView = lazy(() => import("./views/BattleView.jsx"));
+const WikiView = lazy(() => import("./views/WikiView.jsx"));
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
 import { useTheme } from "./hooks/useTheme.js";
@@ -155,7 +156,9 @@ const Shell = () => {
   }, [me?.id]);
 
   let view;
-  if (route === "#/home") view = <HomeView go={go} />;
+  if (route.startsWith("#/wiki/")) {
+    view = <WikiView param={decodeURIComponent(route.slice("#/wiki/".length))} go={go} />;
+  } else if (route === "#/home") view = <HomeView go={go} />;
   else if (route === "#/packs") view = <PacksView />;
   else if (route === "#/collection") view = <CollectionView onGoLogin={() => go("#/login")} onGoBattle={() => go("#/battle")} />;
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
