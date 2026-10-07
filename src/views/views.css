@@ -3195,3 +3195,83 @@ body::before, body::after { transform: translateZ(0); }
   color: var(--text);
 }
 .wiki-actions { display: flex; gap: 10px; margin-top: 14px; }
+
+/* ---- 战前页内置编队编辑器 ---- */
+.team-editor {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.team-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.te-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  border: 2px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.te-cell:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 200, 60, 0.4);
+}
+.te-cell.is-picked {
+  border-color: var(--gold);
+  background: rgba(255, 200, 60, 0.10);
+  box-shadow: 0 0 14px rgba(255, 190, 60, 0.3);
+}
+.te-cell.is-picked::after {
+  content: "✓";
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gold-hi);
+}
+.te-cell img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4));
+}
+.te-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.te-rarity {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+.te-r-UR { color: var(--gold-hi); }
+.team-editor-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+@media (max-width: 760px) {
+  .team-editor-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

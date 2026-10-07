@@ -71,6 +71,10 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [reward, setReward] = useState(null);
   const [resumed, setResumed] = useState(false);
   const [history, setHistory] = useState(null); // 战绩:{wins, losses, battles}
+  const [allCards, setAllCards] = useState([]); // 全收藏(编辑器用)
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState([]); // 编辑器中的临时编队
+  const [savingTeam, setSavingTeam] = useState(false);
   // 最近一次行动:失败重试按钮用(ref 避免重渲染依赖)
   const lastActionRef = useRef(null);
   // playEvents 哨兵用:始终指向最新 battleId(闭包里的 battle 会过期)
@@ -89,6 +93,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         const aBody = await aRes.json();
         const cBody = await cRes.json();
         setTeamIds(tBody.cardIds ?? []);
+        setAllCards(cBody.cards ?? []);
         const ids = new Set(tBody.cardIds ?? []);
         setTeamMons((cBody.cards ?? []).filter((c) => ids.has(c.id)));
         if (aBody.battleId && aBody.state?.status === "active") {
@@ -99,7 +104,39 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
       .catch(() => setError("加载战斗数据失败"));
   }, [me]);
 
+  async function saveTeamFromEditor() {
+    if (savingTeam) return;
+    setSavingTeam(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/battle/team", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cardIds: draftIds }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body?.message || "保存失败");
+        return;
+      }
+      setTeamIds(draftIds);
+      setTeamMons(allCards.filter((c) => draftIds.includes(c.id)));
+      setEditorOpen(false);
+    } finally {
+      setSavingTeam(false);
+    }
+  }
+
+  function toggleDraft(id) {
+    setDraftIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 3) return prev; // 上限 3 只
+      return [...prev, id];
+    });
+  }
+
   async function startBattle(mode) {
+    if (busy || editorOpen) return;
     if (busy || playing) return;
     setBusy(true);
     setError(null);
@@ -475,10 +512,51 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                 <b>{[...new Set(teamMons.flatMap((c) => c.types ?? []))].map(typeZh).join(" / ")}</b>
               </span>
               <span className="ts-sep" aria-hidden="true" />
-              <button type="button" className="ts-link" onClick={onGoCollection}>
-                调整编队 →
+              <button type="button" className="ts-link" onClick={() => setEditorOpen((v) => !v)}>
+                {editorOpen ? "收起编辑器" : "调整编队"}
               </button>
             </div>
+            {editorOpen && (
+              <div className="team-editor card-box">
+                <p className="hint" style={{ marginTop: 0 }}>
+                  点击卡片换上/换下(需要恰好 3 只不同的宝可梦)
+                </p>
+                <div className="team-editor-grid">
+                  {allCards.map((c) => {
+                    const picked = draftIds.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={`te-cell ${picked ? "is-picked" : ""}`}
+                        onClick={() => toggleDraft(c.id)}
+                      >
+                        <img
+                          src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`}
+                          alt={c.name}
+                          loading="lazy"
+                        />
+                        <span className="te-name">{c.zh_name || c.name}</span>
+                        <span className={`te-rarity te-r-${c.rarity}`}>{c.rarity}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="team-editor-foot">
+                  <span className="hint">
+                    已选 <b>{draftIds.length}</b>/3
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-gold"
+                    disabled={draftIds.length !== 3 || savingTeam}
+                    onClick={saveTeamFromEditor}
+                  >
+                    {savingTeam ? "保存中…" : "保存编队"}
+                  </button>
+                </div>
+              </div>
+            )}
             {error && (
               <p className="form-error" role="alert">
                 {error}
