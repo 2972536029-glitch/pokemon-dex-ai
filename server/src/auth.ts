@@ -13,6 +13,7 @@
 
 import crypto from "node:crypto";
 import { q, tx } from "./db.js";
+import { HttpError } from "./http.js";
 
 const SESSION_COOKIE = "dex_session";
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -117,10 +118,10 @@ export async function createSession(userId: number): Promise<{ cookieValue: stri
 // ---- register / login ------------------------------------------------------
 export async function register(username: string, password: string): Promise<SessionUser> {
   if (!USERNAME_RE.test(username)) {
-    throw Object.assign(new Error("用户名需为 3-20 位字母、数字或下划线"), { status: 400 });
+    throw new HttpError(400, "用户名需为 3-20 位字母、数字或下划线", "invalid_username");
   }
   if (typeof password !== "string" || password.length < 6 || password.length > 100) {
-    throw Object.assign(new Error("密码需为 6-100 位"), { status: 400 });
+    throw new HttpError(400, "密码需为 6-100 位", "invalid_password");
   }
   const hash = hashPassword(password);
   try {
@@ -140,7 +141,7 @@ export async function register(username: string, password: string): Promise<Sess
   } catch (err: any) {
     if (err?.code === "23505") {
       // Tradeoff: register reveals username existence — standard game UX.
-      throw Object.assign(new Error("该用户名已被使用"), { status: 409 });
+      throw new HttpError(409, "该用户名已被使用", "username_taken");
     }
     throw err;
   }
@@ -153,7 +154,7 @@ export async function login(username: string, password: string): Promise<Session
   );
   const user = rows[0];
   // Same generic message for both branches — no user enumeration.
-  const generic = Object.assign(new Error("用户名或密码错误"), { status: 401 });
+  const generic = new HttpError(401, "用户名或密码错误", "bad_credentials");
   if (!user) throw generic;
   if (!verifyPassword(password, user.pass_hash)) throw generic;
   return { id: user.id, username: user.username, balance: user.balance };

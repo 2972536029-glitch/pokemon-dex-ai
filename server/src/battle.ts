@@ -305,21 +305,28 @@ export function resolveTurn(
 }
 
 /**
- * Rule-mode AI (zero model calls): pick the move with the highest
- * power × effectiveness (× STAB) against the user's active mon; if badly
- * wounded and a bench mon has a better matchup, switch instead.
+ * Rule-mode brain (zero model calls), SYMMETRIC for either side (v2.3):
+ * pick the move with the highest power × effectiveness (× STAB) against the
+ * opponent's active mon; if badly wounded and a bench mon has a better
+ * matchup, switch instead. The friend-battle simulator drives both teams
+ * through this — the old ai-only variant made every "user" action secretly
+ * control the defender.
  */
-export function chooseAiAction(state: BattleState): Action {
-  const aiMon = state.aiTeam[state.activeAi];
-  const userMon = state.userTeam[state.activeUser];
+export function chooseAction(state: BattleState, side: "user" | "ai"): Action {
+  const myTeam = side === "user" ? state.userTeam : state.aiTeam;
+  const oppTeam = side === "user" ? state.aiTeam : state.userTeam;
+  const myIdx = side === "user" ? state.activeUser : state.activeAi;
+  const oppIdx = side === "user" ? state.activeAi : state.activeUser;
+  const myMon = myTeam[myIdx];
+  const oppMon = oppTeam[oppIdx];
   const best = (mon: BattleMon) =>
-    Math.max(...mon.moves.map((m) => m.power * effectiveness(m.type, userMon.types) * (mon.types.includes(m.type) ? 1.5 : 1)));
+    Math.max(...mon.moves.map((m) => m.power * effectiveness(m.type, oppMon.types) * (mon.types.includes(m.type) ? 1.5 : 1)));
 
-  if (aiMon.hp < aiMon.maxHp * 0.3) {
+  if (myMon.hp < myMon.maxHp * 0.3) {
     let bestBench = -1;
-    let bestScore = best(aiMon) * 1.5; // switching must clearly dominate
-    state.aiTeam.forEach((mon, i) => {
-      if (i !== state.activeAi && alive(mon)) {
+    let bestScore = best(myMon) * 1.5; // switching must clearly dominate
+    myTeam.forEach((mon, i) => {
+      if (i !== myIdx && alive(mon)) {
         const s = best(mon);
         if (s > bestScore) {
           bestScore = s;
@@ -330,10 +337,10 @@ export function chooseAiAction(state: BattleState): Action {
     if (bestBench !== -1) return { kind: "switch", index: bestBench };
   }
   // Best move by expected damage.
-  let bestMove = aiMon.moves[0];
+  let bestMove = myMon.moves[0];
   let bestExp = -1;
-  for (const m of aiMon.moves) {
-    const e = m.power * effectiveness(m.type, userMon.types) * (aiMon.types.includes(m.type) ? 1.5 : 1);
+  for (const m of myMon.moves) {
+    const e = m.power * effectiveness(m.type, oppMon.types) * (myMon.types.includes(m.type) ? 1.5 : 1);
     if (e > bestExp) {
       bestExp = e;
       bestMove = m;
@@ -341,6 +348,9 @@ export function chooseAiAction(state: BattleState): Action {
   }
   return { kind: "move", moveId: bestMove.id };
 }
+
+/** Back-compat alias: the PvE opponent always acts for aiTeam. */
+export const chooseAiAction = (state: BattleState): Action => chooseAction(state, "ai");
 
 /** Generate an AI opponent team from the catalog (3 distinct, rarity-weighted). */
 export interface CatalogMon {

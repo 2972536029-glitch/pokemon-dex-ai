@@ -3,6 +3,7 @@
 // 灵感与守卫原则同 agent.ts/guard.ts:宁缺毋错。
 import express from "express";
 import { chatComplete, GLM_CONFIG } from "./llm.js";
+import { HttpError, wrap } from "./http.js";
 
 const cache = new Map(); // id -> { lore, checked, warnings }
 
@@ -90,22 +91,19 @@ function guardNumbers(text: string, facts: { heightM: number; weightKg: number; 
 export function mountLore(): express.Router {
   const router = express.Router();
 
-  router.get("/api/lore/:id", async (req, res) => {
+  router.get("/api/lore/:id", wrap("lore", "生成失败,请稍后再试", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1 || id > 1010) {
-      res.status(400).json({ error: "bad id" });
-      return;
+      throw new HttpError(400, "宝可梦编号不合法", "bad_id");
     }
     if (cache.has(id)) {
       res.json(cache.get(id));
       return;
     }
     if (!GLM_CONFIG.apiKey) {
-      res.status(503).json({ error: "unavailable", message: "模型未配置" });
-      return;
+      throw new HttpError(503, "模型未配置", "unavailable");
     }
-    try {
-      const facts = await loadFacts(id);
+    const facts = await loadFacts(id);
       const prompt = `你是宝可梦图鉴的编辑。基于以下【事实】为${facts.zhName}(${facts.enName},${facts.genus})写一段 80 字以内的中文背景介绍。
 要求:只使用事实中出现的信息与数字,不得编造任何数值或设定;语言自然,不要逐条罗列。
 【事实】身高 ${facts.heightM}m;体重 ${facts.weightKg}kg;HP ${facts.stats.hp};攻击 ${facts.stats.attack};防御 ${facts.stats.defense};速度 ${facts.stats.speed}。官方说明:${facts.flavor}`;
@@ -124,11 +122,6 @@ export function mountLore(): express.Router {
       };
       cache.set(id, payload);
       res.json(payload);
-    } catch (err: any) {
-      console.error("[lore] failed:", err?.message);
-      res.status(503).json({ error: "unavailable", message: "生成失败,请稍后再试" });
-    }
-  });
-
+  }));
   return router;
 }

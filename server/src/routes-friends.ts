@@ -19,10 +19,10 @@
 
 import express from "express";
 import { q, tx } from "./db.js";
-import { userFromRequest } from "./auth.js";
+import { HttpError, requireUser, wrap } from "./http.js";
+import { addWalletTx } from "./wallet.js";
 import {
-  BattleState, battleMonFromCard, resolveTurn, seededRng,
-  effectiveness, Action, Move, PType,
+  BattleState, battleMonFromCard, chooseAction, resolveTurn, seededRng,
 } from "./battle.js";
 
 const FRIEND_CAP = 50;
@@ -41,32 +41,8 @@ export const TRADE_STATUS = { PENDING: 1, DONE: 2, DECLINED: 3, CANCELED: 4 } as
 export const TRADE_KIND = { GIFT: 1, ASK: 2 } as const;
 export const FBATTLE_STATUS = { PENDING: 1, FINISHED: 2, DECLINED: 3, CANCELED: 4 } as const;
 
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
-
 export function mountFriends(): express.Router {
   const router = express.Router();
-
-  const wrap = (fn: (req: express.Request, res: express.Response) => Promise<void>) =>
-    (req: express.Request, res: express.Response) => {
-      fn(req, res).catch((err: unknown) => {
-        console.error(`[friends] ${req.method} ${req.path} failed:`, err);
-        const status = (err as any)?.status ?? 500;
-        const message = status >= 500 ? "好友服务出了点问题,请稍后再试" : (err as Error)?.message ?? "请求失败";
-        res.status(status).json({ error: "friends_error", message });
-      });
-    };
-
-  const requireUser = async (req: express.Request) => {
-    const user = await userFromRequest(req);
-    if (!user) throw new HttpError(401, "请先登录");
-    // users.id is BIGSERIAL → pg hands it over as a string; every JS-side
-    // comparison here (to_uid !== me.id and friends) needs a real number.
-    return { id: Number(user.id), username: String(user.username) };
-  };
 
   const bad = (message: string): never => { throw new HttpError(400, message); };
 
@@ -117,7 +93,7 @@ export function mountFriends(): express.Router {
 
   // ---- friendships ---------------------------------------------------------
 
-  router.post("/api/friends/request", wrap(async (req, res) => {
+  router.post("/api/friends/request", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const username = String(req.body?.username ?? "").trim();
     if (!username) bad("请填写对方用户名");
@@ -158,7 +134,7 @@ export function mountFriends(): express.Router {
     res.json({ ok: true, friends: false, message: `已向 ${target.username} 发出好友申请` });
   }));
 
-  router.get("/api/friends", wrap(async (req, res) => {
+  router.get("/api/friends", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     // BIGSERIAL ids arrive as strings — hand the client numbers
     const friends = (await q<{ id: number; username: string; since: string }>(
@@ -183,7 +159,7 @@ export function mountFriends(): express.Router {
     res.json({ friends, incoming, outgoing });
   }));
 
-  router.post("/api/friends/requests/:id/accept", wrap(async (req, res) => {
+  router.post("/api/friends/requests/:id/accept", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const requestId = Number(req.params.id);
     if (!Number.isInteger(requestId)) bad("无效的申请");
@@ -207,7 +183,7 @@ export function mountFriends(): express.Router {
     res.json({ ok: true, friend: { uid: a === me.id ? b : a, username: await usernameOf(a === me.id ? b : a) } });
   }));
 
-  router.post("/api/friends/requests/:id/decline", wrap(async (req, res) => {
+  router.post("/api/friends/requests/:id/decline", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const requestId = Number(req.params.id);
     const { rowCount } = await q(
@@ -218,7 +194,7 @@ export function mountFriends(): express.Router {
     res.json({ ok: true });
   }));
 
-  router.delete("/api/friends/:uid", wrap(async (req, res) => {
+  router.delete("/api/friends/:uid", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const other = Number(req.params.uid);
     if (!Number.isInteger(other)) bad("无效的用户");
@@ -239,7 +215,7 @@ export function mountFriends(): express.Router {
   }));
 
   /** Friend's collection (name/rarity/count only) — powers the "ask" picker. */
-  router.get("/api/friends/:uid/cards", wrap(async (req, res) => {
+  router.get("/api/friends/:uid/cards", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const other = Number(req.params.uid);
     if (!Number.isInteger(other)) bad("无效的用户");
@@ -256,7 +232,7 @@ export function mountFriends(): express.Router {
 
   // ---- card trades (gift / ask) --------------------------------------------
 
-  router.post("/api/friends/:uid/trades", wrap(async (req, res) => {
+  router.post("/api/friends/:uid/trades", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const other = Number(req.params.uid);
     const kind = req.body?.kind === "gift" ? TRADE_KIND.GIFT : req.body?.kind === "ask" ? TRADE_KIND.ASK : 0;
@@ -293,7 +269,7 @@ export function mountFriends(): express.Router {
     res.json({ ok: true });
   }));
 
-  router.get("/api/friends/trades", wrap(async (req, res) => {
+  router.get("/api/friends/trades", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const { rows } = await q<any>(
       `SELECT t.id, t.kind, t.from_uid, t.to_uid, t.created_at,
@@ -316,7 +292,7 @@ export function mountFriends(): express.Router {
     res.json({ incoming, outgoing });
   }));
 
-  router.post("/api/trades/:id/accept", wrap(async (req, res) => {
+  router.post("/api/trades/:id/accept", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const tradeId = Number(req.params.id);
     if (!Number.isInteger(tradeId)) bad("无效的请求");
@@ -366,7 +342,7 @@ export function mountFriends(): express.Router {
   }));
 
   const closeTrade = (newStatus: number, who: "from" | "to") =>
-    wrap(async (req, res) => {
+    wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
       const me = await requireUser(req);
       const tradeId = Number(req.params.id);
       const col = who === "from" ? "from_uid" : "to_uid";
@@ -383,7 +359,7 @@ export function mountFriends(): express.Router {
 
   // ---- friend battles (async PvP) -------------------------------------------
 
-  router.post("/api/friends/:uid/challenge", wrap(async (req, res) => {
+  router.post("/api/friends/:uid/challenge", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const other = Number(req.params.uid);
     const ids = parseTeam(req.body?.cardIds);
@@ -401,7 +377,7 @@ export function mountFriends(): express.Router {
     res.json({ ok: true, battleId: Number(rows[0].id) });
   }));
 
-  router.get("/api/friends/battles", wrap(async (req, res) => {
+  router.get("/api/friends/battles", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const rows = (await q<any>(
       `SELECT b.id, b.challenger_uid, b.target_uid, b.challenger_team, b.status,
@@ -422,38 +398,10 @@ export function mountFriends(): express.Router {
   }));
 
   /**
-   * Symmetric move/switch brain — the engine's own rule logic expressed for
-   * either side (chooseAiAction is hardcoded to act for aiTeam, so calling it
-   * for both sides would make BOTH actions control the defender).
-   */
-  function actionFor(state: BattleState, side: "user" | "ai"): Action {
-    const mine = side === "user" ? state.userTeam : state.aiTeam;
-    const idx = side === "user" ? state.activeUser : state.activeAi;
-    const opp = side === "user"
-      ? state.aiTeam[state.activeAi]
-      : state.userTeam[state.activeUser];
-    const mon = mine[idx];
-    const score = (m: Move) =>
-      m.power * effectiveness(m.type as PType, opp.types) * (mon.types.includes(m.type) ? 1.5 : 1);
-    if (mon.hp < mon.maxHp * 0.3) {
-      let bestIdx = -1;
-      let bestScore = Math.max(...mon.moves.map(score)) * 1.5; // switching must dominate
-      mine.forEach((m, i) => {
-        if (i !== idx && m.hp > 0) {
-          const s = Math.max(...m.moves.map(score));
-          if (s > bestScore) { bestScore = s; bestIdx = i; }
-        }
-      });
-      if (bestIdx >= 0) return { kind: "switch", index: bestIdx };
-    }
-    const move = mon.moves.reduce((a, b) => (score(b) > score(a) ? b : a), mon.moves[0]);
-    return { kind: "move", moveId: move.id };
-  }
-
-  /**
-   * Simulate a full battle with the shared engine. Both sides are driven by the
-   * symmetric rule brain — deterministic given the battle id seed, so the stored
-   * report is the single source of truth for both players.
+   * Simulate a full battle with the shared engine. Both sides are driven by
+   * the engine's own symmetric rule brain (chooseAction) — deterministic
+   * given the battle id seed, so the stored report is the single source of
+   * truth for both players.
    */
   async function simulate(battleId: number, challengerCards: any[], targetCards: any[]) {
     const state: BattleState = {
@@ -469,7 +417,7 @@ export function mountFriends(): express.Router {
     const rng = seededRng(battleId % 2147483647);
     let guard = 0;
     while (state.status === "active" && guard++ < TURN_CAP) {
-      const { events } = resolveTurn(state, actionFor(state, "user"), actionFor(state, "ai"), rng);
+      const { events } = resolveTurn(state, chooseAction(state, "user"), chooseAction(state, "ai"), rng);
       for (const e of events) state.log?.push({ turn: state.turn, kind: e.kind, actor: e.actor, text: e.text });
     }
     let winner: "challenger" | "target" | null;
@@ -483,7 +431,7 @@ export function mountFriends(): express.Router {
     return { state, winner };
   }
 
-  router.post("/api/friend-battles/:id/accept", wrap(async (req, res) => {
+  router.post("/api/friend-battles/:id/accept", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const battleId = Number(req.params.id);
     if (!Number.isInteger(battleId)) bad("无效的战书");
@@ -528,8 +476,7 @@ export function mountFriends(): express.Router {
       };
       const pay = async (uid: number, amount: number, detail: string) => {
         await client.query(`UPDATE users SET balance = balance + $1 WHERE id = $2`, [amount, uid]);
-        await client.query(`INSERT INTO wallet_tx (user_id, amount, kind, detail) VALUES ($1, $2, 'battle', $3)`,
-          [uid, amount, detail]);
+        await addWalletTx(client, uid, amount, "battle", detail);
       };
       const winnerUid = winner === "challenger" ? battle.challenger_uid : winner === "target" ? battle.target_uid : null;
       const loserUid = winner === "challenger" ? battle.target_uid : winner === "target" ? battle.challenger_uid : null;
@@ -563,7 +510,7 @@ export function mountFriends(): express.Router {
   }));
 
   const closeBattle = (newStatus: number, who: "challenger" | "target") =>
-    wrap(async (req, res) => {
+    wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
       const me = await requireUser(req);
       const battleId = Number(req.params.id);
       const col = who === "challenger" ? "challenger_uid" : "target_uid";
@@ -578,7 +525,7 @@ export function mountFriends(): express.Router {
   router.post("/api/friend-battles/:id/decline", closeBattle(FBATTLE_STATUS.DECLINED, "target"));
   router.post("/api/friend-battles/:id/cancel", closeBattle(FBATTLE_STATUS.CANCELED, "challenger"));
 
-  router.get("/api/friend-battles/:id", wrap(async (req, res) => {
+  router.get("/api/friend-battles/:id", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
     const battleId = Number(req.params.id);
     if (!Number.isInteger(battleId)) bad("无效的战书");

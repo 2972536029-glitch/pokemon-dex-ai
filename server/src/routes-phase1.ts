@@ -9,6 +9,7 @@
 
 import express from "express";
 import { ensureSchema, q } from "./db.js";
+import { HttpError, requireUser, wrap } from "./http.js";
 import {
   AUTH_CONSTANTS,
   clearSessionCookie,
@@ -42,21 +43,7 @@ export function mountPhase1(): express.Router {
 
   const secureCookie = process.env.NODE_ENV === "production" || process.env.HTTPS_ONLY === "1";
 
-  // Every phase1 handler runs through this wrapper: unexpected errors become
-  // a generic JSON 500 (never a stack trace or driver message) while the
-  // details go to the server log (QA-009/010).
-  const wrap = (fn: (req: express.Request, res: express.Response) => Promise<void>) =>
-    (req: express.Request, res: express.Response) => {
-      fn(req, res).catch((err: unknown) => {
-        console.error(`[phase1] ${req.method} ${req.path} failed:`, err);
-        const status = (err as any)?.status ?? 500;
-        const message =
-          status >= 500 ? "服务暂时不可用,请稍后再试" : (err as Error)?.message ?? "请求失败";
-        res.status(status).json({ error: "internal", message });
-      });
-    };
-
-  router.post("/api/auth/register", wrap(async (req, res) => {
+  router.post("/api/auth/register", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
     try {
       const { username, password } = req.body ?? {};
       const user = await register(String(username ?? ""), String(password ?? ""));
@@ -64,13 +51,13 @@ export function mountPhase1(): express.Router {
       res.setHeader("Set-Cookie", sessionCookie(s.cookieValue, s.maxAgeSec, secureCookie));
       res.json({ user, signupBonus: AUTH_CONSTANTS.SIGNUP_BONUS });
     } catch (err: any) {
-      if (err?.status) throw err; // validation / 409 carry their own message
+      if (err instanceof HttpError) throw err; // validation / 409 carry their own message
       console.error("[auth] register failed:", err);
-      throw Object.assign(new Error("注册失败,请稍后再试"), { status: 500 });
+      throw new HttpError(500, "注册失败,请稍后再试");
     }
   }));
 
-  router.post("/api/auth/login", wrap(async (req, res) => {
+  router.post("/api/auth/login", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
     const ip = Array.isArray(req.ip) ? req.ip[0] : (req.ip ?? "unknown");
     if (!loginAllowed(ip)) {
       res.status(429).json({ error: "rate_limited", message: "尝试次数过多,请 15 分钟后再试" });
@@ -83,20 +70,20 @@ export function mountPhase1(): express.Router {
       res.setHeader("Set-Cookie", sessionCookie(s.cookieValue, s.maxAgeSec, secureCookie));
       res.json({ user });
     } catch (err: any) {
-      if (err?.status) throw err; // 401 generic / 429 rate limit
+      if (err instanceof HttpError) throw err; // 401 generic / 429 rate limit
       console.error("[auth] login failed:", err);
       throw err; // wrap turns unknown errors into a generic 500
     }
   }));
 
-  router.post("/api/auth/logout", wrap(async (req, res) => {
+  router.post("/api/auth/logout", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
     const sid = parseSessionCookie(req);
     if (sid) await destroySession(sid);
     res.setHeader("Set-Cookie", clearSessionCookie(secureCookie));
     res.json({ ok: true });
   }));
 
-  router.get("/api/me", wrap(async (req, res) => {
+  router.get("/api/me", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
     const user = await userFromRequest(req);
     if (!user) {
       res.json({ user: null });
@@ -105,35 +92,23 @@ export function mountPhase1(): express.Router {
     res.json({ user });
   }));
 
-  router.post("/api/wallet/daily", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.post("/api/wallet/daily", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     res.json(await dailyBonus(user.id));
   }));
 
-  router.get("/api/wallet/tx", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.get("/api/wallet/tx", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     res.json({ transactions: await walletHistory(user.id) });
   }));
 
   // 公示接口:卡包定义 + 概率 + 池子大小,店页据此渲染概率表
-  router.get("/api/packs/pity", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.get("/api/packs/pity", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     res.json(await pityStatus(user.id));
   }));
 
-  router.get("/api/packs", wrap(async (_req, res) => {
+  router.get("/api/packs", wrap("phase1", "服务暂时不可用,请稍后再试", async (_req, res) => {
     res.json({
       packs: PACKS.map((p) => ({
         id: p.id,
@@ -146,41 +121,26 @@ export function mountPhase1(): express.Router {
     });
   }));
 
-  router.post("/api/packs/:id/draw", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.post("/api/packs/:id/draw", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     try {
       const orderId = String(req.body?.orderId ?? "");
       res.json(await drawCard({ userId: user.id, username: user.username, packId: String(req.params.id), orderId }));
     } catch (err: any) {
-      if (err instanceof GachaError) {
-        res.status(err.status).json({ error: "gacha_failed", message: err.message });
-        return;
-      }
+      if (err instanceof HttpError) throw err;   // GachaError(4xx) keeps gacha_failed + message
       console.error("[packs] draw failed:", err);
-      res.status(500).json({ error: "internal", message: "抽卡出了点问题,请重试" });
+      throw new HttpError(500, "抽卡出了点问题,请重试");
     }
   }));
 
   // ---- 十连:一次订单 = 10 张,子幂等键派生自订单号,复用单抽全链路 ----
-  router.post("/api/packs/:id/tenpull", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.post("/api/packs/:id/tenpull", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     const pack = PACKS.find((p) => p.id === req.params.id);
-    if (!pack) {
-      res.status(404).json({ error: "not_found", message: "卡包不存在" });
-      return;
-    }
+    if (!pack) throw new HttpError(404, "卡包不存在", "not_found");
     const orderId = String(req.body?.orderId ?? "");
     if (!/^[a-zA-Z0-9-]{8,56}$/.test(orderId)) {
-      res.status(400).json({ error: "invalid order id", message: "invalid order id" });
-      return;
+      throw new HttpError(400, "订单号格式不正确", "invalid_order_id");
     }
     const TEN = 10;
     const cards = [];
@@ -211,12 +171,8 @@ export function mountPhase1(): express.Router {
     });
   }));
 
-  router.get("/api/collection", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.get("/api/collection", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     res.json({ cards: await myCollection(user.id) });
   }));
 

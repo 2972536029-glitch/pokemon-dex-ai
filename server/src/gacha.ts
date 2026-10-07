@@ -10,6 +10,9 @@
 import crypto from "node:crypto";
 import { q, tx } from "./db.js";
 import { AUTH_CONSTANTS } from "./auth.js";
+import { HttpError } from "./http.js";
+import { loadCardById } from "./cards.js";
+import { addWalletTx } from "./wallet.js";
 
 export interface PackDef {
   id: string;
@@ -32,12 +35,10 @@ export function findPack(id: string): PackDef | undefined {
   return PACKS.find((p) => p.id === id);
 }
 
-export class GachaError extends Error {
-  status: number;
-  __dbg?: Record<string, unknown>;
+export class GachaError extends HttpError {
   constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
+    // gacha_failed keeps its own machine code on 4xx responses
+    super(status, message, "gacha_failed");
   }
 }
 
@@ -56,10 +57,7 @@ export async function dailyBonus(userId: number): Promise<{ granted: boolean; ba
       `UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance`,
       [bonus, userId]
     );
-    await client.query(
-      `INSERT INTO wallet_tx (user_id, amount, kind, detail) VALUES ($1, $2, 'daily', '每日登录奖励')`,
-      [userId, bonus]
-    );
+    await addWalletTx(client, userId, bonus, "daily", "每日登录奖励");
     return upd.rows[0].balance;
   });
   if (inserted === false) {
@@ -144,21 +142,13 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
     [input.orderId, input.userId]
   );
   if (existing.rows[0]) {
-    const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [
-      existing.rows[0].card_id,
-    ]);
+    const card = await loadCardById(existing.rows[0].card_id);
     const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
-    return { card: card.rows[0], balance: bal.rows[0].balance, replay: true };
+    return { card, balance: bal.rows[0].balance, replay: true };
   }
 
   // 2) Pity: read THIS pack's counter; at its threshold force UR. Roll + pick
   //    BEFORE the transaction (pure RNG over static catalog data).
-  const __dbg = {
-    envSet: !!process.env.UNLIMITED_USER_IDS,
-    envLen: (process.env.UNLIMITED_USER_IDS ?? "").length,
-    username: input.username ?? null,
-    unlimited: isUnlimited(input),
-  };
   const sinceUr = await readPity(input.userId, pack.id);
   const forceRarity = sinceUr >= pack.pity - 1 ? ("UR" as const) : undefined;
   const rolled = await rollCard(pack, forceRarity);
@@ -177,11 +167,9 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
         [input.orderId, input.userId]
       );
       if (winner.rows[0]) {
-        const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [
-          winner.rows[0].card_id,
-        ]);
+        const card = await loadCardById(winner.rows[0].card_id);
         const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
-        return { card: card.rows[0], balance: bal.rows[0].balance, replay: true };
+        return { card, balance: bal.rows[0].balance, replay: true };
       }
     }
     throw err;
@@ -239,8 +227,8 @@ async function drawOnceFree(
     );
     return cur.rows[0]?.balance ?? 0;
   });
-  const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [cardId]);
-  return { card: card.rows[0], balance, replay: false };
+  const card = await loadCardById(cardId);
+  return { card, balance, replay: false };
 }
 
 async function drawOnceCharged(
@@ -269,15 +257,12 @@ async function drawOnceCharged(
        ON CONFLICT (user_id, card_id) DO UPDATE SET count = user_cards.count + 1`,
       [input.userId, cardId]
     );
-    await client.query(
-      `INSERT INTO wallet_tx (user_id, amount, kind, detail) VALUES ($1, $2, 'gacha', $3)`,
-      [input.userId, -pack.price, `抽卡:${pack.name}`]
-    );
+    await addWalletTx(client, input.userId, -pack.price, "gacha", `抽卡:${pack.name}`);
     return upd.rows[0].balance;
   });
 
-  const card = await q<any>(`SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards WHERE id = $1`, [cardId]);
-  return { card: card.rows[0], balance: result, replay: false };
+  const card = await loadCardById(cardId);
+  return { card, balance: result, replay: false };
 }
 
 /** Rarity by disclosed weights (or forced by pity), then uniform pick within that rarity pool. */

@@ -9,7 +9,9 @@
 import crypto from "node:crypto";
 import express from "express";
 import { q, tx } from "./db.js";
-import { userFromRequest } from "./auth.js";
+import { requireUser } from "./http.js";
+import { HttpError, wrap } from "./http.js";
+import { addWalletTx } from "./wallet.js";
 import { AUTH_CONSTANTS } from "./auth.js";
 import {
   BattleState, BattleMon, battleMonFromCard, chooseAiAction, pickAiTeam,
@@ -31,24 +33,8 @@ function clientSignal(req: express.Request): AbortSignal {
 export function mountBattle(): express.Router {
   const router = express.Router();
 
-  const wrap = (fn: (req: express.Request, res: express.Response) => Promise<void>) =>
-    (req: express.Request, res: express.Response) => {
-      fn(req, res).catch((err: unknown) => {
-        console.error(`[battle] ${req.method} ${req.path} failed:`, err);
-        const status = (err as any)?.status ?? 500;
-        const message = status >= 500 ? "战斗服务出了点问题,请稍后再试" : (err as Error)?.message ?? "请求失败";
-        res.status(status).json({ error: "battle_error", message });
-      });
-    };
-
-  const requireUser = async (req: express.Request) => {
-    const user = await userFromRequest(req);
-    if (!user) throw Object.assign(new Error("请先登录"), { status: 401 });
-    return user;
-  };
-
   // ---- save battle team (must be 3 DISTINCT owned cards) --------------------
-  router.post("/api/battle/team", wrap(async (req, res) => {
+  router.post("/api/battle/team", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const ids = (req.body?.cardIds ?? []).map(Number);
     const okShape =
@@ -76,7 +62,7 @@ export function mountBattle(): express.Router {
     res.json({ ok: true, team: ids });
   }));
 
-  router.get("/api/battle/team", wrap(async (req, res) => {
+  router.get("/api/battle/team", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const { rows } = await q<{ card_ids: number[] }>(`SELECT card_ids FROM user_teams WHERE user_id = $1`, [user.id]);
     res.json({ cardIds: rows[0]?.card_ids ?? [] });
@@ -84,12 +70,8 @@ export function mountBattle(): express.Router {
 
   // ---- start: build state from the saved team + a random AI team ------------
   // ---- history:已结束对战的摘要 + 总胜负(战绩页/大厅用) ----
-  router.get("/api/battle/history", wrap(async (req, res) => {
-    const user = await userFromRequest(req);
-    if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "请先登录" });
-      return;
-    }
+  router.get("/api/battle/history", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
+    const user = await requireUser(req);
     const { rows } = await q(
       `SELECT status, state->>'mode' AS mode, state->>'turn' AS turns,
               finished_at
@@ -110,7 +92,7 @@ export function mountBattle(): express.Router {
     });
   }));
 
-  router.post("/api/battle/start", wrap(async (req, res) => {
+  router.post("/api/battle/start", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const mode = req.body?.mode === "reasoned" ? "reasoned" : "rule";
     // one active battle per user: reuse instead of stacking
@@ -168,18 +150,18 @@ export function mountBattle(): express.Router {
   async function loadOwnedBattle(req: express.Request, userId: number) {
     const id = String(req.params.id ?? "");
     if (!/^[a-f0-9-]{10,64}$/i.test(id)) {
-      throw Object.assign(new Error("战斗不存在"), { status: 404 });
+      throw new HttpError(404, "战斗不存在", "not_found");
     }
     const { rows } = await q<{ id: string; state: BattleState; status: string }>(
       `SELECT id, state, status FROM battles WHERE id = $1 AND user_id = $2`,
       [id, userId]
     );
-    if (!rows[0]) throw Object.assign(new Error("战斗不存在"), { status: 404 });
+    if (!rows[0]) throw new HttpError(404, "战斗不存在", "not_found");
     return rows[0];
   }
 
   // ---- state -----------------------------------------------------------------
-  router.get("/api/battle/active", wrap(async (req, res) => {
+  router.get("/api/battle/active", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const { rows } = await q<{ id: string; state: BattleState }>(
       `SELECT id, state FROM battles WHERE user_id = $1 AND status = 'active'
@@ -189,14 +171,14 @@ export function mountBattle(): express.Router {
     res.json(rows[0] ? { battleId: rows[0].id, state: clampBattleState(rows[0].state) } : { battleId: null });
   }));
 
-  router.get("/api/battle/:id/state", wrap(async (req, res) => {
+  router.get("/api/battle/:id/state", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
     res.json({ battleId: row.id, state: clampBattleState(row.state), status: row.status });
   }));
 
   // ---- turn ------------------------------------------------------------------
-  router.post("/api/battle/:id/turn", wrap(async (req, res) => {
+  router.post("/api/battle/:id/turn", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
     if (row.status !== "active") {
@@ -284,7 +266,7 @@ export function mountBattle(): express.Router {
     res.json({ state, events, reward });
   }));
 
-  router.post("/api/battle/:id/forfeit", wrap(async (req, res) => {
+  router.post("/api/battle/:id/forfeit", wrap("battle", "战斗服务出了点问题,请稍后再试", async (req, res) => {
     const user = await requireUser(req);
     const row = await loadOwnedBattle(req, user.id);
     // Patch BOTH the column and the state snapshot's own status — the state

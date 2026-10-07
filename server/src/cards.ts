@@ -8,6 +8,22 @@ import { q } from "./db.js";
 export const POKEAPI = "https://pokeapi.co/api/v2";
 export const CATALOG_SIZE = 151;
 
+/** The one card-projection every consumer shares (v2.3: was copied 6x). */
+const CARD_FIELDS = "id, name, zh_name, rarity, types, stats, sprite";
+
+/** Load cards by id list (order NOT guaranteed — callers sort themselves). */
+export async function loadCardsByIds(ids: number[]): Promise<any[]> {
+  if (!ids.length) return [];
+  const { rows } = await q<any>(`SELECT ${CARD_FIELDS} FROM cards WHERE id = ANY($1)`, [ids]);
+  return rows;
+}
+
+/** Load one card by id, or null. */
+export async function loadCardById(id: number): Promise<any | null> {
+  const rows = await loadCardsByIds([id]);
+  return rows[0] ?? null;
+}
+
 export function shapeStats(raw: any): Record<string, number> {
   const s: Record<string, number> = {};
   for (const st of raw.stats ?? []) s[st.stat.name] = st.base_stat;
