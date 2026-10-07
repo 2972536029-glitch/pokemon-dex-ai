@@ -116,3 +116,19 @@
 - 过程修的三个真 bug:①BIGSERIAL→JS 字符串,`to_uid !== me.id` 严格比较全炸(requireUser 归一 Number);②user_teams.card_ids 是 integer[],`@> to_jsonb()` 报 operator 不存在,改 `ANY()`;③chooseAiAction 写死操作 aiTeam,好友战双方若各调一次会双控被挑战方——重写对称 actionFor
 - 已知瑕疵:战报日志 "AI 对手" 措辞沿用 PvE 文案(见 v2.2 文档回填)
 - 状态:验收通过,销项
+
+# v2.2 移动端适配 + 奖励封顶修正 · 2026-10-08
+
+## QA-037 [已修复] 移动端三处布局 + PvP 奖励封顶失效 + E2E 两处假绿
+- 移动端(390×844 IAB 实测,本地+生产):
+  1. 底栏 grid 写死 5 列,加「好友」后第 6 项折到第二行 → repeat(6, 1fr)
+  2. 开屏主标题 clamp 下限 38px+6px 字距,390px 屏"冒险"被裁 → 640px 以下 clamp(22px,8vw,38px)+2px 字距,CTA/副标题同步缩
+  3. 好友弹窗(选卡/战报)页脚被长网格埋进滚动区 → 弹窗改 flex 列:标题/页脚钉死,网格与日志内部滚动(86dvh);ts-link 窄条不折行
+  4. 全站 390px 巡检 home/packs/collection/battle/dex/friends 横向溢出均为 0;编队编辑器 3 列网格、好友行按钮折行正常
+- PvP 奖励封顶失效(真 bug):rewardable 用 date_trunc('day', now()) 按**服务器 UTC**取整,UTC+8 用户的"今天"与 UTC 错位,计数永远不满 10 → 改**滚动 24 小时窗口**(now() - interval '24 hours'),速率限制无时区边界可钻
+- E2E 假绿两处(friends-e2e):
+  1. balance() 调了不存在的 /api/auth/me(SPA fallback 返 HTML)→ 奖励断言空集恒真 → 改 /api/me
+  2. 封顶检查用**相对基线的累计差**(前 9 场的增量永远非零,第 11 场不发奖也判不出)→ 改逐场边际差
+  - 服务器侧正确性由钱包对账独立证明:13 场完赛恰好 10 笔 battle 入账
+- 教训:E2E 断言要防"空集恒真"(先证明度量非空);时区相关的"每日"逻辑在 UTC 服务器上必须显式声明时区或用滚动窗口
+- 状态:已修复(79c1f11),生产 390px 复验通过(底栏 6 项单行/开屏标题完整/好友页零溢出),销项
