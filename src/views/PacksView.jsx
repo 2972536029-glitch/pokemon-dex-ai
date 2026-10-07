@@ -7,6 +7,20 @@ import { TYPE_COLORS, TYPE_ZH } from "../config/pokemon.js";
 
 const RARITY_LABEL = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" };
 const RARITY_DOT = { C: "#98a4b0", R: "#2a75bb", UR: "#d4af37" };
+const RARITY_RANK = { C: 0, R: 1, UR: 2 };
+
+// 十连揭示元数据:按稀有度升序(悬念保留到 UR 压轴),同稀有度保持抽到的原序
+function buildTenMeta(cards) {
+  const order = cards
+    .map((_, i) => i)
+    .sort((a, b) => RARITY_RANK[cards[a].rarity] - RARITY_RANK[cards[b].rarity] || a - b);
+  const top = cards.some((c) => c.rarity === "UR")
+    ? "UR"
+    : cards.some((c) => c.rarity === "R")
+      ? "R"
+      : "C";
+  return { order, top };
+}
 
 // 每个卡包的产品化视觉
 const PACK_ART = {
@@ -36,9 +50,10 @@ export default function PacksView() {
   const [tenResult, setTenResult] = useState(null); // {cards, shortfall}
   const [txOpen, setTxOpen] = useState(false);
   const [txList, setTxList] = useState(null); // 钱包流水(懒加载:展开才请求)
-  // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → "reveal"(揭晓)
+  // 开包动画状态机: null → "pack"(摇晃) → "burst"(炸开) → 单抽 "converge"/"reveal" · 十连 "ten-reveal"
   const [stage, setStage] = useState(null);
   const [armed, setArmed] = useState(false); // 摇晃完毕,等待玩家点击拆包
+  const [tenMode, setTenMode] = useState(false); // 本轮仪式是否为十连(pack/burst 与单抽共享)
   const skipRef = useRef(false);
 
   useEffect(() => {
@@ -71,6 +86,7 @@ export default function PacksView() {
     setDrawing(packId);
     setResult(null);
     setStage("pack");
+    setTenMode(false); // 单抽走 converge 分支
     skipRef.current = false;
 
     // Idempotency key bound to the purchase intent (QA-005).
@@ -124,18 +140,43 @@ export default function PacksView() {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  // 方舟式交互:玩家点击推进仪式。pack(武装完成)→ burst;converge → reveal
+  // 方舟式交互:玩家点击推进仪式。pack(武装完成)→ burst;burst 后按模式分流;converge → reveal;
+  // ten-reveal 阶段点击 = 立刻翻开下一张(加速)
   function advanceCeremony() {
     if (!stage || busy) return;
     if (stage === "pack" && armed) {
       setArmed(false);
       setStage("burst");
       setTimeout(() => {
-        if (!skipRef.current) setStage("converge");
+        if (skipRef.current) return;
+        setStage(tenMode ? "ten-reveal" : "converge");
       }, 650);
     } else if (stage === "converge" && result?.card) {
       setStage("reveal");
+    } else if (stage === "ten-reveal") {
+      revealNext();
     }
+  }
+
+  // 十连揭示引擎:每翻一张按"下一张的稀有度"决定停顿——UR 前心跳停顿拉高悬念
+  useEffect(() => {
+    if (stage !== "ten-reveal" || !tenResult) return;
+    const { cards, order, revealed } = tenResult;
+    if (revealed >= cards.length) return;
+    const next = cards[order[revealed]];
+    const delay = next?.rarity === "UR" ? 1000 : next?.rarity === "R" ? 500 : 380;
+    const t = setTimeout(() => {
+      setTenResult((p) => p && { ...p, revealed: p.revealed + 1 });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [stage, tenResult]);
+
+  function revealNext() {
+    setTenResult((p) => (p && p.revealed < p.cards.length ? { ...p, revealed: p.revealed + 1 } : p));
+  }
+
+  function flipAllTen() {
+    setTenResult((p) => (p ? { ...p, revealed: p.cards.length, bulk: true } : p));
   }
 
   async function handleTenPull(packId) {
@@ -143,31 +184,65 @@ export default function PacksView() {
     setBusy(true);
     setDrawing(packId);
     setNotice(null);
-    try {
-      let base = intentIds.current[packId + "-t10"];
-      if (!base) {
-        try { base = crypto.randomUUID(); } catch { base = `t10-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
-        intentIds.current[packId + "-t10"] = base;
+    let base = intentIds.current[packId + "-t10"];
+    if (!base) {
+      try { base = crypto.randomUUID(); } catch { base = `t10-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
+      intentIds.current[packId + "-t10"] = base;
+    }
+    // 仪式与请求并行(与单抽一致):点下十连立刻出包摇晃,数据在路上
+    setTenResult(null);
+    setTenMode(true);
+    setStage("pack");
+    setArmed(false);
+    skipRef.current = false;
+    const choreography = sleep(1300).then(() => {
+      if (!skipRef.current) setArmed(true);
+    });
+    const request = (async () => {
+      try {
+        const res = await fetch(`/api/packs/${packId}/tenpull`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ orderId: base }),
+        });
+        const body = await res.json();
+        return { ok: res.ok, body };
+      } catch {
+        return { ok: false, body: null };
       }
-      const res = await fetch(`/api/packs/${packId}/tenpull`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId: base }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setNotice(body?.message || "十连失败");
-        delete intentIds.current[packId + "-t10"];
+    })();
+    const [, outcome] = await Promise.all([choreography, request]);
+    try {
+      if (!outcome.ok || !outcome.body) {
+        setNotice(outcome.body?.message || "十连失败,请重试(同一订单重试不会重复扣费)");
+        setStage(null);
+        setTenMode(false);
         return;
       }
-      setTenResult({ cards: body.cards ?? [], shortfall: body.shortfall ?? 0, replay: body.replay });
-      setStage("grid");
-      delete intentIds.current[packId + "-t10"];
+      const cards = outcome.body.cards ?? [];
+      if (!cards.length) {
+        // 余额为 0 时服务端返回空卡组:没有可揭示的内容,直接提示,不进仪式
+        setNotice("余额不足,十连一张也没抽成(每日登录 +50)");
+        setStage(null);
+        setTenMode(false);
+        return;
+      }
+      const { order, top } = buildTenMeta(cards);
+      const skipped = skipRef.current; // 摇晃中就按了跳过:数据到了直接全开
+      setTenResult({
+        cards,
+        order,
+        top,
+        shortfall: outcome.body.shortfall ?? 0,
+        replay: outcome.body.replay,
+        revealed: skipped ? cards.length : 0,
+        bulk: skipped,
+      });
+      if (skipped) setStage("ten-reveal");
       await refresh();
       fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
-    } catch {
-      setNotice("网络异常,请重试");
     } finally {
+      delete intentIds.current[packId + "-t10"];
       setBusy(false);
       setDrawing(null);
     }
@@ -318,12 +393,18 @@ export default function PacksView() {
         </p>
       )}
 
-      {stage && (
-        <div
-          className={`pack-stage stage-${stage} ${result?.card && (stage === "converge" || stage === "reveal") ? `ark-r-${result.card.rarity}` : ""} ${stage === "pack" && armed ? "is-armed" : ""}`}
-          role="status"
-          onClick={advanceCeremony}
-        >
+      {stage && (() => {
+        // 仪式染色:单抽用抽到的卡;十连用本包最高稀有度。pack 摇晃段保持中性不剧透
+        const ceremonyRarity = tenMode ? tenResult?.top ?? null : result?.card?.rarity ?? null;
+        const themed = ceremonyRarity && stage !== "pack" ? `ark-r-${ceremonyRarity}` : "";
+        const lastIdx = stage === "ten-reveal" && tenResult && tenResult.revealed > 0 ? tenResult.order[tenResult.revealed - 1] : -1;
+        const lastIsUR = lastIdx >= 0 && tenResult?.cards[lastIdx]?.rarity === "UR";
+        return (
+      <div
+        className={`pack-stage stage-${stage} ${themed} ${stage === "pack" && armed ? "is-armed" : ""} ${lastIsUR ? "ten-ur-hit" : ""}`}
+        role="status"
+        onClick={advanceCeremony}
+      >
           {stage === "pack" && armed && (
             <button type="button" className="ark-tap-hint" onClick={advanceCeremony}>
               点击拆开
@@ -359,7 +440,8 @@ export default function PacksView() {
                     "--angle": `${i * (360 / 14) + 8}deg`,
                     "--dist": `${140 + (i % 4) * 48}px`,
                     "--delay": `${i * 12}ms`,
-                    background: i % 2 ? "#ffd75e" : "#ffffff",
+                    // 粒子颜色吃稀有度染色变量:C 蓝白 / R 亮青 / UR 金
+                    background: i % 2 ? "var(--ark-core)" : "var(--ark-glow)",
                   }}
                 />
               ))}
@@ -391,34 +473,72 @@ export default function PacksView() {
               ))}
             </>
           )}
-          {stage === "grid" && tenResult?.cards && (
-            <div className="ten-wrap">
-              <p className="ten-title">
-                {tenResult.shortfall > 0
-                  ? `金币只够 ${tenResult.cards.length} 抽,已入账`
-                  : tenResult.replay
-                    ? "十连重放(未重复扣费)"
-                    : "十连揭晓"}
-              </p>
-              <div className="ten-grid">
-                {tenResult.cards.map((c, i) => (
+          {/* 十连第三幕:卡背阵列落地 → 按稀有度升序逐张翻开,UR 压轴 */}
+          {stage === "ten-reveal" && tenResult?.cards && (() => {
+            const total = tenResult.cards.length;
+            const rankOf = new Map(tenResult.order.map((idx, rank) => [idx, rank]));
+            const allIn = tenResult.revealed >= total;
+            return (
+              <>
+                {lastIsUR && <div key={tenResult.revealed} className="ten-ur-flash" aria-hidden="true" />}
+                <div className="ten-wrap">
+                <p className="ten-title">
+                  {tenResult.shortfall > 0
+                    ? `金币只够 ${total} 抽,已入账 · `
+                    : tenResult.replay
+                      ? "十连重放(未重复扣费) · "
+                      : ""}
+                  {allIn ? `最佳 ${RARITY_LABEL[tenResult.top]}` : `翻开中 ${tenResult.revealed}/${total}`}
+                </p>
+                <div className="ten-grid">
+                  {tenResult.cards.map((c, i) => {
+                    const rank = rankOf.get(i);
+                    const isUp = rank < tenResult.revealed;
+                    const isFresh = tenResult.bulk ? isUp : i === lastIdx;
+                    return (
+                      <div
+                        key={`${c.id}-${i}`}
+                        className={`ten-cell ten-cell-${c.rarity} ${isUp ? "is-up" : "is-down"} ${isFresh ? "is-fresh" : ""} ${i === lastIdx && c.rarity === "UR" ? "is-ur-hit" : ""}`}
+                        style={tenResult.bulk && isFresh ? { animationDelay: `${rank * 45}ms` } : undefined}
+                      >
+                        {isUp ? (
+                          <>
+                            <img
+                              src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`}
+                              alt={c.name}
+                              loading="lazy"
+                            />
+                            <span className="ten-cell-rarity">{c.rarity}</span>
+                          </>
+                        ) : (
+                          <div className="ten-card-back" aria-hidden="true" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {!allIn && <p className="ten-hint">轻触任意处加速翻开 · 最高稀有度压轴</p>}
+                {allIn ? (
                   <button
-                    key={`${c.id}-${i}`}
                     type="button"
-                    className={`ten-cell ten-cell-${c.rarity}`}
-                    style={{ animationDelay: `${i * 90}ms` }}
-                    onClick={() => setTenResult((prev) => prev && { ...prev, focus: i })}
+                    className="btn-gold pack-continue"
+                    onClick={(e) => { e.stopPropagation(); setTenResult(null); setTenMode(false); setStage(null); }}
                   >
-                    <img src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`} alt={c.name} loading="lazy" />
-                    <span className="ten-cell-rarity">{c.rarity}</span>
+                    收下
                   </button>
-                ))}
-              </div>
-              <button type="button" className="btn-gold pack-continue" onClick={() => { setTenResult(null); setStage(null); }}>
-                收下
-              </button>
-            </div>
-          )}
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-ghost pack-continue"
+                    onClick={(e) => { e.stopPropagation(); flipAllTen(); }}
+                  >
+                    全部翻开 »
+                  </button>
+                )}
+                </div>
+              </>
+            );
+          })()}
           {stage === "reveal" && result?.card && (
             <div className="pack-reveal-wrap">
               {result.card.rarity === "UR" && <div className="ur-rays" aria-hidden="true" />}
@@ -459,12 +579,30 @@ export default function PacksView() {
             </div>
           )}
           {stage === "pack" && (
-            <button type="button" className="btn-ghost pack-skip" onClick={() => { skipRef.current = true; setArmed(false); setStage("reveal"); }}>
+            <button
+              type="button"
+              className="btn-ghost pack-skip"
+              onClick={(e) => {
+                e.stopPropagation();
+                skipRef.current = true;
+                setArmed(false);
+                if (tenMode) {
+                  // 卡组数据未到时先记 skipRef,数据到达直接全开;已到则立即全开
+                  if (tenResult) {
+                    setTenResult((p) => (p ? { ...p, revealed: p.cards.length, bulk: true } : p));
+                    setStage("ten-reveal");
+                  }
+                } else {
+                  setStage("reveal");
+                }
+              }}
+            >
               跳过动画 »
             </button>
           )}
         </div>
-      )}
+      );
+      })()}
     </div>
   );
 }
