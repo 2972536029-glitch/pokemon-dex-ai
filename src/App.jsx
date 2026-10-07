@@ -7,10 +7,12 @@ const PacksView = lazy(() => import("./views/PacksView.jsx"));
 const CollectionView = lazy(() => import("./views/CollectionView.jsx"));
 const LoginView = lazy(() => import("./views/LoginView.jsx"));
 const BattleView = lazy(() => import("./views/BattleView.jsx"));
+const FriendsView = lazy(() => import("./views/FriendsView.jsx"));
 const WikiView = lazy(() => import("./views/WikiView.jsx"));
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
 import { useTheme } from "./hooks/useTheme.js";
+import { useFriendPending } from "./hooks/useFriendPending.js";
 import "./views/splash.css";
 import "./views/views.css";
 
@@ -68,7 +70,7 @@ function useCountUp(value) {
   return display;
 }
 
-function Header({ route, go }) {
+function Header({ route, go, pending }) {
   const { me, logout } = useAuth();
   const balance = useCountUp(me?.balance ?? 0);
   const link = (hash, label) => (
@@ -94,6 +96,10 @@ function Header({ route, go }) {
         {link("#/packs", "卡包商店")}
         {link("#/collection", "我的收藏")}
         {link("#/battle", "对战")}
+        <span className="nav-badge-wrap">
+          {link("#/friends", "好友")}
+          {pending > 0 && <span className="nav-badge" aria-label={`待处理 ${pending} 项`}>{pending}</span>}
+        </span>
       </nav>
       <div className="topbar-user">
         {me ? (
@@ -126,6 +132,7 @@ const TITLES = {
   "#/packs": "卡包商店",
   "#/collection": "我的收藏",
   "#/battle": "对战",
+  "#/friends": "好友",
   "#/login": "登录",
 };
 
@@ -144,6 +151,7 @@ const Shell = () => {
   };
   const [dexContext, setDexContext] = useState(null);
   const { me } = useAuth();
+  const pendingFriends = useFriendPending(me?.id ?? null);
   // 原神式开屏:每次完整加载都先进入沉浸页,点击 CTA 才进业务
   const [entered, setEntered] = useState(false);
   const [splashGone, setSplashGone] = useState(false);
@@ -163,11 +171,12 @@ const Shell = () => {
   else if (route === "#/collection") view = <CollectionView onGoLogin={() => go("#/login")} onGoBattle={() => go("#/battle")} />;
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
+  else if (route === "#/friends") view = <FriendsView />;
   else view = <DexView onContextChange={setDexContext} />;
 
   return (
     <div className={`app-shell ${entered && splashGone ? "app-enter" : ""}`}>
-      <Header route={route} go={go} />
+      <Header route={route} go={go} pending={pendingFriends} />
       {/* key=route:切视图时重挂载,触发 view-in 过渡动画 */}
       <main className="view-frame" key={route}>
         <ViewErrorBoundary>
@@ -185,6 +194,7 @@ const Shell = () => {
           ["#/packs", "商店", "🎴"],
           ["#/collection", "收藏", "🎒"],
           ["#/battle", "对战", "⚔️"],
+          ["#/friends", "好友", "🤝"],
         ].map(([hash, label, icon]) => (
           <button
             key={hash}
@@ -192,7 +202,12 @@ const Shell = () => {
             className={route === hash ? "tabbar-item is-active" : "tabbar-item"}
             onClick={() => go(hash)}
           >
-            <span className="tabbar-icon" aria-hidden="true">{icon}</span>
+            <span className="tabbar-icon" aria-hidden="true">
+              {icon}
+              {hash === "#/friends" && pendingFriends > 0 && (
+                <span className="nav-badge" aria-label={`待处理 ${pendingFriends} 项`}>{pendingFriends}</span>
+              )}
+            </span>
             <span className="tabbar-label">{label}</span>
           </button>
         ))}

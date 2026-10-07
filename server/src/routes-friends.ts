@@ -238,6 +238,22 @@ export function mountFriends(): express.Router {
     res.json({ ok: true });
   }));
 
+  /** Friend's collection (name/rarity/count only) — powers the "ask" picker. */
+  router.get("/api/friends/:uid/cards", wrap(async (req, res) => {
+    const me = await requireUser(req);
+    const other = Number(req.params.uid);
+    if (!Number.isInteger(other)) bad("无效的用户");
+    if (other === me.id || !(await areFriends(me.id, other))) {
+      throw new HttpError(403, "只能查看好友的卡池");
+    }
+    const { rows } = await q(
+      `SELECT c.id, c.name, c.zh_name, c.rarity, c.sprite, uc.count
+       FROM user_cards uc JOIN cards c ON c.id = uc.card_id
+       WHERE uc.user_id = $1 AND uc.count >= 1
+       ORDER BY c.id`, [other]);
+    res.json({ cards: rows });
+  }));
+
   // ---- card trades (gift / ask) --------------------------------------------
 
   router.post("/api/friends/:uid/trades", wrap(async (req, res) => {
