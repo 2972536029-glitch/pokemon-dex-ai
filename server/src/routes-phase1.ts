@@ -157,7 +157,7 @@ export function mountPhase1(): express.Router {
       res.json(await drawCard({ userId: user.id, username: user.username, packId: String(req.params.id), orderId }));
     } catch (err: any) {
       if (err instanceof GachaError) {
-        res.status(err.status).json({ error: "gacha_failed", message: err.message, __dbg: err.__dbg ?? null });
+        res.status(err.status).json({ error: "gacha_failed", message: err.message });
         return;
       }
       console.error("[packs] draw failed:", err);
@@ -196,7 +196,6 @@ export function mountPhase1(): express.Router {
         if (err instanceof GachaError && err.status === 402) {
           // 每张子抽独立扣费,未抽的本就没扣——如实报告 shortfall
           shortfall = TEN - i;
-          console.log("[tenpull] 402 dbg:", JSON.stringify(err.__dbg ?? null));
           break;
         }
         throw err;
