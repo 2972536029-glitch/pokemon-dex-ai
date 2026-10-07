@@ -110,4 +110,54 @@ ALTER TABLE gacha_pity DROP CONSTRAINT IF EXISTS gacha_pity_pkey;
 ALTER TABLE gacha_pity ADD CONSTRAINT gacha_pity_pkey PRIMARY KEY (user_id, pack_id);
 ALTER TABLE gacha_orders DROP CONSTRAINT IF EXISTS gacha_orders_pkey;
 ALTER TABLE gacha_orders ADD PRIMARY KEY (user_id, order_id);
+
+-- ==================== v2.2 好友系统(计划书 docs/updates/v2.2-friends.md) ====================
+-- 工程约定:不建物理外键(引用完整性由应用层+事务保证);状态用 SMALLINT+应用层常量,可扩展不改表
+CREATE TABLE IF NOT EXISTS friend_requests (
+  id BIGSERIAL PRIMARY KEY,
+  from_uid INTEGER NOT NULL,
+  to_uid   INTEGER NOT NULL,
+  status   SMALLINT NOT NULL DEFAULT 1,   -- 1 待处理 2 已同意 3 已拒绝
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  handled_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_friend_req_pending
+  ON friend_requests (from_uid, to_uid) WHERE status = 1;
+CREATE INDEX IF NOT EXISTS idx_friend_req_inbox ON friend_requests (to_uid, status);
+
+CREATE TABLE IF NOT EXISTS friendships (
+  id BIGSERIAL PRIMARY KEY,
+  user_a INTEGER NOT NULL,               -- 恒为较小 uid,防双向重复建交
+  user_b INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_friendship_pair UNIQUE (user_a, user_b)
+);
+
+CREATE TABLE IF NOT EXISTS card_trades (
+  id BIGSERIAL PRIMARY KEY,
+  kind     SMALLINT NOT NULL,            -- 1 赠送(发起人→接收人) 2 索要(接收人→发起人)
+  from_uid INTEGER NOT NULL,
+  to_uid   INTEGER NOT NULL,
+  card_id  INTEGER NOT NULL,
+  status   SMALLINT NOT NULL DEFAULT 1,  -- 1 待处理 2 已成交 3 已拒绝 4 已撤销
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  handled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_trades_inbox ON card_trades (to_uid, status);
+CREATE INDEX IF NOT EXISTS idx_trades_outbox ON card_trades (from_uid, status);
+
+CREATE TABLE IF NOT EXISTS friend_battles (
+  id BIGSERIAL PRIMARY KEY,
+  challenger_uid INTEGER NOT NULL,
+  target_uid     INTEGER NOT NULL,
+  challenger_team JSONB NOT NULL,        -- [cardId×3] 下战书时的编队快照
+  target_team    JSONB,                  -- 应战时才填
+  status  SMALLINT NOT NULL DEFAULT 1,   -- 1 待应战 2 已完赛 3 已拒绝 4 已撤销
+  winner_uid INTEGER,
+  battle_log JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_fbattles_inbox ON friend_battles (target_uid, status);
+CREATE INDEX IF NOT EXISTS idx_fbattles_outbox ON friend_battles (challenger_uid, status);
 `;

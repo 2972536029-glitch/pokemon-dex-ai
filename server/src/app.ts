@@ -11,6 +11,7 @@ import { LlmError } from "./types.js";
 import { loadEnvFile } from "./env.js";
 import { mountPhase1 } from "./routes-phase1.js";
 import { mountBattle } from "./routes-battle.js";
+import { mountFriends } from "./routes-friends.js";
 import { mountLore } from "./lore.js";
 import { userFromRequest } from "./auth.js";
 import { catalogNames, seedCatalog } from "./cards.js";
@@ -68,6 +69,7 @@ export function createApp() {
   // returns 503 for its own routes instead of taking the app down).
   app.use(mountPhase1());
   app.use(mountBattle());
+  app.use(mountFriends());
   app.use(mountLore());
 
   // ---- the chat endpoint ----------------------------------------------------
