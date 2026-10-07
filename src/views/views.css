@@ -3616,3 +3616,39 @@ body::before, body::after { transform: translateZ(0); }
   .fr-pick-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
   .fr-pick-cell img { width: 50px; height: 50px; }
 }
+
+/* ====================================================================
+   移动端主页重设计(v2.2.1):修复主页与底栏/悬浮球的交叠 + 首屏信息密度
+   ==================================================================== */
+@media (max-width: 760px) {
+  /* 底栏实高 52px,原预留 56px 只剩 4px 余量,安全区/缩放一大就压线 */
+  .app-shell { padding-bottom: calc(78px + env(safe-area-inset-bottom, 0)); }
+  .ai-fab { bottom: calc(64px + env(safe-area-inset-bottom, 0)); }
+  .ai-panel { bottom: calc(64px + env(safe-area-inset-bottom, 0)); }
+
+  /* 主页尾部再多让一截,给「问图鉴」悬浮球让位:最后的按钮不被盖住 */
+  .home-view { padding-bottom: 30px; }
+
+  /* Hero 紧凑化:首屏上半是口号,下半就能看到四宫格 */
+  .home-hero { padding: 26px 16px 22px; border-radius: 18px; }
+  .home-hero-eyebrow { font-size: 10px; letter-spacing: 0.3em; margin-bottom: 6px; }
+  .home-hero-title { font-size: clamp(20px, 6vw, 26px); margin-bottom: 6px; }
+  .home-hero-sub { font-size: 11.5px; letter-spacing: 0.16em; margin: 0 0 12px; }
+  .home-hero-float { width: 84px; right: -14px; opacity: 0.92; }
+  .home-hero-cta { gap: 8px; }
+  .home-hero-cta .btn-primary,
+  .home-hero-cta .btn-gold { flex: 1 1 auto; min-width: 0; padding: 11px 10px; font-size: 13px; }
+
+  /* 四宫格:触达优先,装饰文案(悬停才出现的"进入→")在触屏上无意义,直接收掉 */
+  .home-entries { gap: 10px; }
+  .home-entry { padding: 14px 10px 12px; border-radius: 16px; gap: 3px; }
+  .home-entry-art { width: 58px; height: 58px; }
+  .home-entry-art img { width: 50px; height: 50px; }
+  .home-entry-name { font-size: 14px; }
+  .home-entry-desc { display: none; }
+  .home-entry-go { display: none; }
+
+  /* 下半区留白收紧 */
+  .home-lower { gap: 10px; }
+  .home-sec-title { margin-bottom: 10px; }
+}
