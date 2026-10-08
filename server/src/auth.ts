@@ -7,11 +7,13 @@
 //   sessions live in DB with expiry — revocable, unlike stateless JWTs.
 // - Login failures return a GENERIC message (防用户枚举). Register does reveal
 //   "username taken" — a deliberate UX tradeoff for a game (documented).
-// - Login rate limit: in-memory per-IP counter. HONEST LIMITATION: on
-//   serverless each instance counts independently; the industrial answer is
-//   a shared store (Redis). Acceptable for this scale, documented here.
+// - Login rate limit lives in ratelimit.ts (DB-backed rolling window,
+//   shared across serverless instances) since v2.3.
+// - scrypt is async: the N=2^14 KDF blocks the event loop for ~50-100ms
+//   when done synchronously — unacceptable on a shared serverless thread.
 
 import crypto from "node:crypto";
+import { promisify } from "node:util";
 import { q, tx } from "./db.js";
 import { HttpError } from "./http.js";
 
@@ -23,41 +25,25 @@ const DAILY_BONUS = 50;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 
 // ---- password hashing ------------------------------------------------------
-export function hashPassword(password: string): string {
+const scrypt = promisify(crypto.scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options: crypto.ScryptOptions,
+) => Promise<Buffer>;
+const SCRYPT_PARAMS = { N: 1 << 14, r: 8, p: 1 };
+
+export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, 64, { N: 1 << 14, r: 8, p: 1 });
+  const hash = await scrypt(password, salt, 64, SCRYPT_PARAMS);
   return `${salt.toString("hex")}:${hash.toString("hex")}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [saltHex, hashHex] = stored.split(":");
   if (!saltHex || !hashHex) return false;
-  const hash = crypto.scryptSync(password, Buffer.from(saltHex, "hex"), 64, {
-    N: 1 << 14, r: 8, p: 1,
-  });
+  const hash = await scrypt(password, Buffer.from(saltHex, "hex"), 64, SCRYPT_PARAMS);
   return crypto.timingSafeEqual(hash, Buffer.from(hashHex, "hex"));
-}
-
-// ---- login rate limiting (per instance; see module note) -------------------
-const attempts = new Map<string, { count: number; resetAt: number }>();
-const LIMIT = 10;
-const WINDOW_MS = 15 * 60 * 1000;
-
-export function loginAllowed(key: string): boolean {
-  const now = Date.now();
-  // Prune expired entries on every call: keeps the map bounded at
-  // O(active-window IPs) instead of growing forever (QA-003).
-  for (const [k, v] of attempts) {
-    if (now > v.resetAt) attempts.delete(k);
-  }
-  if (attempts.size >= 10_000) attempts.clear(); // absolute safety valve
-  const rec = attempts.get(key);
-  if (!rec || now > rec.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return true;
-  }
-  rec.count += 1;
-  return rec.count <= LIMIT;
 }
 
 // ---- session helpers -------------------------------------------------------
@@ -112,6 +98,12 @@ export async function createSession(userId: number): Promise<{ cookieValue: stri
     `INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, now() + interval '7 days')`,
     [sid, userId]
   );
+  // 过期会话清理:sessions 表只增不减会无界膨胀。本用户的过期行必删;
+  // 全表过期行 5% 采样删(每次登录摊一点清理成本,无需定时任务)。
+  await q(`DELETE FROM sessions WHERE user_id = $1 AND expires_at <= now()`, [userId]);
+  if (Math.random() < 0.05) {
+    await q(`DELETE FROM sessions WHERE expires_at <= now()`);
+  }
   return { cookieValue: sid, maxAgeSec: Math.floor(SESSION_TTL_MS / 1000) };
 }
 
@@ -123,7 +115,7 @@ export async function register(username: string, password: string): Promise<Sess
   if (typeof password !== "string" || password.length < 6 || password.length > 100) {
     throw new HttpError(400, "密码需为 6-100 位", "invalid_password");
   }
-  const hash = hashPassword(password);
+  const hash = await hashPassword(password);
   try {
     const rows = await tx(async (client) => {
       const ins = await client.query<{ id: number; username: string; balance: number }>(
@@ -156,7 +148,7 @@ export async function login(username: string, password: string): Promise<Session
   // Same generic message for both branches — no user enumeration.
   const generic = new HttpError(401, "用户名或密码错误", "bad_credentials");
   if (!user) throw generic;
-  if (!verifyPassword(password, user.pass_hash)) throw generic;
+  if (!(await verifyPassword(password, user.pass_hash))) throw generic;
   return { id: user.id, username: user.username, balance: user.balance };
 }
 

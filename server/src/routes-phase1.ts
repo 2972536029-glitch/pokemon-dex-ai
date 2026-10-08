@@ -8,15 +8,15 @@
 // request body/query — that value is what AI tools are bound to as well.
 
 import express from "express";
-import { ensureSchema, q } from "./db.js";
-import { HttpError, requireUser, wrap } from "./http.js";
+import { q } from "./db.js";
+import { HttpError, clientIp, requireUser, wrap } from "./http.js";
+import { allowRate } from "./ratelimit.js";
 import {
   AUTH_CONSTANTS,
   clearSessionCookie,
   createSession,
   destroySession,
   login,
-  loginAllowed,
   parseSessionCookie,
   register,
   sessionCookie,
@@ -27,23 +27,15 @@ import { GachaError, PACKS, dailyBonus, drawCard, myCollection, pityStatus, wall
 export function mountPhase1(): express.Router {
   const router = express.Router();
 
-  // Schema gate: retries until the DB is reachable. A transient failure
-  // (Neon cold start) must NEVER permanently poison the router — the old
-  // cached-failure design turned one cold-start blip into endless 503s even
-  // after the database recovered.
-  router.use(["/api/auth", "/api/me", "/api/wallet", "/api/packs", "/api/collection"], async (req, res, next) => {
-    try {
-      await ensureSchema();
-      next();
-    } catch (err: any) {
-      console.error("[phase1] schema unavailable:", err?.message);
-      res.status(503).json({ error: "db_unavailable", message: "数据库暂时不可用,请几秒后重试" });
-    }
-  });
+  // schema 门已上移到 app.ts 的全局 /api 中间件(v2.3)。
 
   const secureCookie = process.env.NODE_ENV === "production" || process.env.HTTPS_ONLY === "1";
 
   router.post("/api/auth/register", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
+    if (!(await allowRate(`register:${clientIp(req)}`, 10, 86_400))) {
+      res.status(429).json({ error: "rate_limited", message: "注册太频繁,请明天再试" });
+      return;
+    }
     try {
       const { username, password } = req.body ?? {};
       const user = await register(String(username ?? ""), String(password ?? ""));
@@ -58,8 +50,7 @@ export function mountPhase1(): express.Router {
   }));
 
   router.post("/api/auth/login", wrap("phase1", "服务暂时不可用,请稍后再试", async (req, res) => {
-    const ip = Array.isArray(req.ip) ? req.ip[0] : (req.ip ?? "unknown");
-    if (!loginAllowed(ip)) {
+    if (!(await allowRate(`login:${clientIp(req)}`, 10, 900))) {
       res.status(429).json({ error: "rate_limited", message: "尝试次数过多,请 15 分钟后再试" });
       return;
     }

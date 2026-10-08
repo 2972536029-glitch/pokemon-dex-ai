@@ -160,4 +160,12 @@ CREATE TABLE IF NOT EXISTS friend_battles (
 );
 CREATE INDEX IF NOT EXISTS idx_fbattles_inbox ON friend_battles (target_uid, status);
 CREATE INDEX IF NOT EXISTS idx_fbattles_outbox ON friend_battles (challenger_uid, status);
+
+-- v2.3 安全:DB 背书的滚动窗口限流(serverless 每实例内存计数互不相通,
+-- 保护成本/滥用面的限额必须落在唯一的共享存储上)
+CREATE TABLE IF NOT EXISTS rate_events (
+  ident TEXT NOT NULL,             -- "login:<ip>" / "chat:<ip>" / ...
+  at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_rate_events_ident ON rate_events (ident, at);
 `;

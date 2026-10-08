@@ -14,6 +14,8 @@ import { mountBattle } from "./routes-battle.js";
 import { mountFriends } from "./routes-friends.js";
 import { mountLore } from "./lore.js";
 import { userFromRequest } from "./auth.js";
+import { clientIp } from "./http.js";
+import { allowRate } from "./ratelimit.js";
 import { catalogNames, seedCatalog } from "./cards.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +25,28 @@ export function createApp() {
 
   const app = express();
   app.use(express.json({ limit: "64kb" }));
+
+  // 安全响应头(手写,零依赖;CSP 需配合构建产物单独评估,暂缓)
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
+
+  // 冷启动门:所有 /api 先确保 schema。原来只有 phase1 的五类路径有门,
+  // 好友/对战/lore 表在新 serverless 实例的第一次请求会裸 500。
+  app.use("/api", async (req, res, next) => {
+    try {
+      const { ensureSchema } = await import("./db.js");
+      await ensureSchema();
+      next();
+    } catch (err: any) {
+      console.error("[api] schema unavailable:", err?.message);
+      res.status(503).json({ error: "db_unavailable", message: "数据库暂时不可用,请几秒后重试" });
+    }
+  });
 
   const isMock = process.env.MOCK_LLM === "1" || !GLM_CONFIG.apiKey;
 
@@ -60,7 +84,7 @@ export function createApp() {
       res.json({ ok: true, ...result });
     } catch (err: any) {
       console.error("[admin] seed failed:", err);
-      res.status(500).json({ error: "seed_failed", message: err.message });
+      res.status(500).json({ error: "seed_failed", message: "初始化失败,请查看服务端日志" });
     }
   });
 
@@ -91,6 +115,12 @@ export function createApp() {
       );
     if (!valid) {
       res.status(400).json({ error: "invalid_request", message: "messages must be 1-30 user/assistant turns (<=4000 chars each)" });
+      return;
+    }
+
+    // 成本保护:匿名即可用的 GLM 入口必须限流(DB 背书,跨实例共享)。
+    if (!(await allowRate(`chat:${clientIp(req)}`, 20, 86_400))) {
+      res.status(429).json({ error: "rate_limited", message: "今天的提问次数用完了,明天再来吧" });
       return;
     }
 

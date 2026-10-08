@@ -71,3 +71,14 @@ export async function requireUser(req: express.Request): Promise<AuthedUser> {
   if (!user) throw new HttpError(401, "请先登录", "unauthorized");
   return { id: Number(user.id), username: String(user.username), balance: Number(user.balance) };
 }
+
+/**
+ * Best-effort real client IP. On Vercel the edge APPENDS the connecting IP
+ * to X-Forwarded-For, so the RIGHTMOST entry is the only proxy-set (trusted)
+ * one — the leftmost can be injected by the client. Falls back to req.ip.
+ */
+export function clientIp(req: express.Request): string {
+  const raw = String(req.headers["x-forwarded-for"] ?? "");
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return parts[parts.length - 1] || req.ip || "unknown";
+}

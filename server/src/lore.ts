@@ -3,7 +3,8 @@
 // 灵感与守卫原则同 agent.ts/guard.ts:宁缺毋错。
 import express from "express";
 import { chatComplete, GLM_CONFIG } from "./llm.js";
-import { HttpError, wrap } from "./http.js";
+import { HttpError, clientIp, wrap } from "./http.js";
+import { allowRate } from "./ratelimit.js";
 
 const cache = new Map(); // id -> { lore, checked, warnings }
 
@@ -102,6 +103,10 @@ export function mountLore(): express.Router {
     }
     if (!GLM_CONFIG.apiKey) {
       throw new HttpError(503, "模型未配置", "unavailable");
+    }
+    // 缓存命中零成本不限流;未命中才计数(GLM + PokeAPI 双外呼)
+    if (!(await allowRate(`lore:${clientIp(req)}`, 100, 86_400))) {
+      throw new HttpError(429, "查询太频繁,请稍后再试", "rate_limited");
     }
     const facts = await loadFacts(id);
       const prompt = `你是宝可梦图鉴的编辑。基于以下【事实】为${facts.zhName}(${facts.enName},${facts.genus})写一段 80 字以内的中文背景介绍。
