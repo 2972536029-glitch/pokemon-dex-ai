@@ -4,9 +4,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
-import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
+import { TYPE_COLORS, typeZh , RARITY_SHORT as RARITY_LABEL } from "../config/pokemon.js";
 
-const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 const TEAM_SIZE = 3;
 
 const TYPE_LIST = [

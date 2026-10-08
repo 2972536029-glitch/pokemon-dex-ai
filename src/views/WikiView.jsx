@@ -1,18 +1,11 @@
 // 图鉴词条页:官方数据(种族值/属性)+ AI 小传(数值守卫,服务端缓存)。
 // 数据来自 PokeAPI 与 /api/lore,零新后端表。
 import { useEffect, useState } from "react";
-import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
+import { TYPE_COLORS, typeZh , STAT_LABELS_ZH, statColor } from "../config/pokemon.js";
 
-const statLabels = {
-  hp: "HP",
-  attack: "攻击",
-  defense: "防御",
-  "special-attack": "特攻",
-  "special-defense": "特防",
-  speed: "速度",
-};
 
-const statColor = (v) => (v < 50 ? "#ff5f5f" : v < 80 ? "#ffd75e" : "#3ddc84");
+
+
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -132,7 +125,7 @@ export default function WikiView({ param, go }) {
         <div className="wiki-stats">
           {poke.stats.map((s) => (
             <div key={s.stat.name} className="wiki-stat-row">
-              <span className="ws-label">{statLabels[s.stat.name] ?? s.stat.name}</span>
+              <span className="ws-label">{STAT_LABELS_ZH[s.stat.name] ?? s.stat.name}</span>
               <div className="ws-track">
                 <div
                   className="ws-fill"

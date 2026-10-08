@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
-import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
+import { TYPE_COLORS, typeZh, RARITY_SHORT as RARITY_LABEL } from "../config/pokemon.js";
 
-const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
 
 const displayName = (mon) => (mon.zhName ? `${mon.zhName} (${mon.name})` : mon.name);
 
@@ -532,7 +531,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                         onClick={() => toggleDraft(c.id)}
                       >
                         <img
-                          src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`}
+                          src={artworkUrl(c.id)}
                           alt={c.name}
                           loading="lazy"
                         />

@@ -66,3 +66,31 @@ export const STAT_ZH = {
   "special-defense": "特防",
   speed: "速度",
 };
+
+
+// ---- 稀有度呈现常量(v2.3 从 4 个视图收敛) ----
+export const RARITY_SHORT = { C: "C", R: "R", UR: "UR" };              // 角标用
+export const RARITY_LONG = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" }; // 完整标签
+export const RARITY_DOT = { C: "#98a4b0", R: "#2a75bb", UR: "#d4af37" };     // 概率条圆点
+export const RARITY_RANK = { C: 0, R: 1, UR: 2 };                     // 排序权重
+export const RARITY_CHIP_CLS = { C: "fr-chip-c", R: "fr-chip-r", UR: "fr-chip-ur" }; // 好友页章样式
+
+/** 稀有度渐变头(卡面头部背景):两属性取前两色 */
+export function rarityGradientHead(colors) {
+  const g = colors ?? [];
+  const a = g[0] ?? "#98a4b0";
+  return g.length > 1 ? `linear-gradient(120deg, ${g[0]}, ${g[1]})` : `linear-gradient(120deg, ${a}, ${a}cc)`;
+}
+
+/** 属性条/立绘通用的属性缺省色 */
+export const TYPE_FALLBACK = "#98a4b0";
+
+/** 数值条配色(PokemonCard 与 WikiView 共享;v2.3 从两份拷贝收敛) */
+export function statColor(v) {
+  if (v < 50) return "#e0533d";
+  if (v < 80) return "#f0a12f";
+  return "#4fae4e";
+}
+
+/** 数值中文名(WikiView 自带的一份与此处 STAT_ZH 合并) */
+export const STAT_LABELS_ZH = { hp: "HP", attack: "攻击", defense: "防御", "special-attack": "特攻", "special-defense": "特防", speed: "速度" };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TYPE_COLORS, STAT_ZH, typeZh } from "../config/pokemon.js";
+import { TYPE_COLORS, STAT_ZH, typeZh , statColor } from "../config/pokemon.js";
 
 // 中文名/分类/图鉴说明来自 species 接口(PokeAPI 本体不含中文名)。
 // 模块级缓存:左右翻卡来回切不重复请求。
@@ -27,8 +27,6 @@ async function fetchSpeciesZh(speciesUrl) {
   return out;
 }
 
-// 能力值 → 条色:<50 红 / <80 黄 / 其余绿(官方图鉴惯例的感知映射)
-const statColor = (v) => (v < 50 ? "#ff5f5f" : v < 80 ? "#ffd75e" : "#3ddc84");
 
 const PokemonCard = ({ pokemon, isFavorite, onToggleFavorite }) => {
   const { id, name, height, weight, types, stats, species } = pokemon;

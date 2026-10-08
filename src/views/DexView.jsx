@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchPokemon, randomId, pokemonUrl } from "./api/pokemon.js";
-import { MAX_ID } from "./config/pokemon.js";
-import LoadingState from "./components/LoadingState.jsx";
-import ErrorState from "./components/ErrorState.jsx";
-import PokemonCard from "./components/PokemonCard.jsx";
-import NetworkInfo from "./components/NetworkInfo.jsx";
-import SearchSuggestions from "./components/SearchSuggestions.jsx";
-import FavoritesBar from "./components/FavoritesBar.jsx";
-import EvolutionChain from "./components/EvolutionChain.jsx";
-import { useFavorites } from "./hooks/useFavorites.js";
-import { useTheme } from "./hooks/useTheme.js";
+import { fetchPokemon, randomId, pokemonUrl } from "../api/pokemon.js";
+import { MAX_ID } from "../config/pokemon.js";
+import LoadingState from "../components/LoadingState.jsx";
+import ErrorState from "../components/ErrorState.jsx";
+import PokemonCard from "../components/PokemonCard.jsx";
+import NetworkInfo from "../components/NetworkInfo.jsx";
+import SearchSuggestions from "../components/SearchSuggestions.jsx";
+import FavoritesBar from "../components/FavoritesBar.jsx";
+import EvolutionChain from "../components/EvolutionChain.jsx";
+import { useFavorites } from "../hooks/useFavorites.js";
+import { useTheme } from "../hooks/useTheme.js";
 
 // Validate input before hitting the network. PokeAPI accepts a name
 // (letters, "-", ".") or an id (1..MAX_ID). Anything else is rejected

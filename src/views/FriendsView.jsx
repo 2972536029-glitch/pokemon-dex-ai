@@ -4,9 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { bumpFriends } from "../hooks/useFriendPending.js";
 import { artworkUrl } from "../shared/artwork.js";
-
-const RARITY_LABEL = { C: "C", R: "R", UR: "UR" };
-const RARITY_CLS = { C: "fr-chip-c", R: "fr-chip-r", UR: "fr-chip-ur" };
+import { api } from "../api/client.js";
+import { RARITY_SHORT as RARITY_LABEL, RARITY_CHIP_CLS as RARITY_CLS } from "../config/pokemon.js";
 
 export default function FriendsView() {
   const { me, refresh } = useAuth();
@@ -44,25 +43,16 @@ export default function FriendsView() {
     load();
   }, [load]);
 
-  // 只发请求并回填提示;busy 的开关统一由外层 act() 管理
+  // 只发请求并回填提示;busy 的开关统一由外层 act() 管理。传输层走共享 client。
   const call = useCallback(async (method, path, body) => {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch(path, {
-        method,
-        headers: body ? { "content-type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(json?.message || "操作失败,请重试");
-        return false;
-      }
+      const json = method === "DELETE" ? await api.delete(path) : await api.post(path, body);
       if (json?.message) setNotice(json.message);
       return json;
-    } catch {
-      setError("网络异常,请重试");
+    } catch (e) {
+      setError(e?.message || "网络异常,请重试");
       return false;
     }
   }, []);

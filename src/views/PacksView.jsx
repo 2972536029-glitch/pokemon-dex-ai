@@ -1,13 +1,10 @@
 // 卡包商店:概率公示、价格、幂等抽取,购买触发开包仪式动画。
 // 幂等键绑定购买意图(QA-005):响应丢失后重试同一意图不会重复扣费。
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
-import { TYPE_COLORS, TYPE_ZH } from "../config/pokemon.js";
-
-const RARITY_LABEL = { C: "常见 (C)", R: "稀有 (R)", UR: "超稀有 (UR)" };
-const RARITY_DOT = { C: "#98a4b0", R: "#2a75bb", UR: "#d4af37" };
-const RARITY_RANK = { C: 0, R: 1, UR: 2 };
+import { api } from "../api/client.js";
+import { TYPE_COLORS, TYPE_ZH, RARITY_LONG, RARITY_DOT, RARITY_RANK } from "../config/pokemon.js";
 
 // 十连揭示元数据:按稀有度升序(悬念保留到 UR 压轴),同稀有度保持抽到的原序
 function buildTenMeta(cards) {
@@ -56,16 +53,17 @@ export default function PacksView() {
   const [tenMode, setTenMode] = useState(false); // 本轮仪式是否为十连(pack/burst 与单抽共享)
   const skipRef = useRef(false);
 
+  // 保底进度拉取(单抽/十连后都要刷新:v2.3 从三处逐字拷贝收敛)
+  const refreshPity = useCallback(() => {
+    if (me) api.get("/api/packs/pity", { soft: true }).then((d) => setPity(d));
+  }, [me?.id]);
   useEffect(() => {
-    if (me) fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
-    fetch("/api/packs")
-      .then((r) => r.json())
-      .then((body) => {
-        setPacks(body);
-        setDailyBonus(body.dailyBonus ?? 50);
-      })
-      .catch(() => setPacks({ packs: [] }));
-  }, []);
+    refreshPity();
+    api.get("/api/packs", { soft: true }).then((body) => {
+      setPacks(body ?? { packs: [] });
+      setDailyBonus(body?.dailyBonus ?? 50);
+    });
+  }, [refreshPity]);
 
   // 流水懒加载:第一次展开才请求
   useEffect(() => {
@@ -130,7 +128,7 @@ export default function PacksView() {
       // Order settled — rotate the key so the NEXT purchase is a new order.
       delete intentIds.current[packId];
       await refresh(); // wallet balance changed
-      fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
+      refreshPity();
     }
     setBusy(false);
     setDrawing(null);
@@ -240,7 +238,7 @@ export default function PacksView() {
       });
       if (skipped) setStage("ten-reveal");
       await refresh();
-      fetch("/api/packs/pity").then((r) => (r.ok ? r.json() : null)).then((d) => setPity(d)).catch(() => {});
+      refreshPity();
     } finally {
       delete intentIds.current[packId + "-t10"];
       setBusy(false);
@@ -334,7 +332,7 @@ export default function PacksView() {
                       <div key={r} className="rate-row">
                         <span className="rate-label">
                           <span className="rate-dot" style={{ background: RARITY_DOT[r] }} />
-                          {RARITY_LABEL[r]}
+                          {RARITY_LONG[r]}
                         </span>
                         <span className="rate-track">
                           <span className="rate-fill" style={{ width: `${w * 100}%`, background: RARITY_DOT[r] }} />
@@ -488,7 +486,7 @@ export default function PacksView() {
                     : tenResult.replay
                       ? "十连重放(未重复扣费) · "
                       : ""}
-                  {allIn ? `最佳 ${RARITY_LABEL[tenResult.top]}` : `翻开中 ${tenResult.revealed}/${total}`}
+                  {allIn ? `最佳 ${RARITY_LONG[tenResult.top]}` : `翻开中 ${tenResult.revealed}/${total}`}
                 </p>
                 <div className="ten-grid">
                   {tenResult.cards.map((c, i) => {
@@ -503,11 +501,7 @@ export default function PacksView() {
                       >
                         {isUp ? (
                           <>
-                            <img
-                              src={`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${c.id}.png`}
-                              alt={c.name}
-                              loading="lazy"
-                            />
+                            <img src={artworkUrl(c.id)} alt={c.name} loading="lazy" />
                             <span className="ten-cell-rarity">{c.rarity}</span>
                           </>
                         ) : (
@@ -567,7 +561,7 @@ export default function PacksView() {
                           </span>
                         ))}
                       </div>
-                      <span className={`rarity-ribbon r${c.rarity}`}>{RARITY_LABEL[c.rarity]}</span>
+                      <span className={`rarity-ribbon r${c.rarity}`}>{RARITY_LONG[c.rarity]}</span>
                     </div>
                   </div>
                 );

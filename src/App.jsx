@@ -2,7 +2,7 @@ import { Component, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "./state/auth.jsx";
 // 路由级代码分割:首页/开屏保持首包,业务视图按需加载(首屏体积减半)
 const HomeView = lazy(() => import("./views/HomeView.jsx"));
-const DexView = lazy(() => import("./DexView.jsx"));
+const DexView = lazy(() => import("./views/DexView.jsx"));
 const PacksView = lazy(() => import("./views/PacksView.jsx"));
 const CollectionView = lazy(() => import("./views/CollectionView.jsx"));
 const LoginView = lazy(() => import("./views/LoginView.jsx"));
@@ -13,7 +13,6 @@ import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
 import { useTheme } from "./hooks/useTheme.js";
 import { useFriendPending } from "./hooks/useFriendPending.js";
-import "./views/splash.css";
 import "./views/views.css";
 
 // 视图崩溃兜底:商业底线是任何单页异常都不能白屏整站
