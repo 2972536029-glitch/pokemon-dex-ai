@@ -143,3 +143,31 @@
   3. 桌面端(>760px)零改动:hero 原padding、描述可见、底栏隐藏,已回归确认
 - 全站 390px 溢出巡检:home/packs/collection/battle/dex/friends 全 0
 - 状态:已修复,生产复验通过,销项
+
+# v2.3 底层优化 + 安全加固 + 高内聚低耦合 · 2026-10-08
+
+> 审计先行(两份子代理事实清单:server 21 文件 4241 行 / src 全量),五阶段推进,全程 4 套件守护(v23 24 + e2e 36 + friends 43/44 + engine 17)。
+
+## QA-039 [已修复/重构完成] 共享内核 + 安全加固 + 性能
+### 内聚(阶段1,b40235a)
+- server/src/http.ts:HttpError/wrap(domain)/requireUser 收编三份 wrap 拷贝、两种 requireUser、七处内联 401;错误契约规范化({error: 机器码, message}),tenpull "message 当 code" 修复
+- auth.ts/GachaError 全部迁 HttpError;GachaError 死字段 __dbg 移除
+- wallet.ts addWalletTx 收敛 5 处钱包写点;cards.ts loadCardsByIds/ById 收敛 4 处卡片 SELECT(审计报 6 处,其中 2 处是按稀有度随机池,形状不同,保留)
+- battle.ts chooseAiAction 泛化 chooseAction(state, side),删除好友模拟器的对称拷贝
+### 安全(阶段2,9f552ce)
+- 安全响应头 ×4(XCTO/XFO/Referrer-Policy/Permissions-Policy,生产响应实测 4/4;CSP 暂缓另评)
+- clientIp:XFF 最右条目(Vercel 边缘写入,唯一可信)——原登录限流 key 打在代理 IP 上,全站共享一个计数桶
+- ratelimit.ts:rate_events 表 + 滚动窗口,挂 chat 20/24h(匿名 GLM 成本入口)/register 10/24h/lore 100/24h(缓存未命中才计)/login 10/15min;RATE_LIMIT_SCALE 本地放大(.env.local);DB 错误 fail-open
+- scryptSync → async(登录不再阻塞事件循环 ~100ms);createSession 清扫本用户过期会话 + 5% 全表采样(表无界增长)
+- admin/seed 500 不回 err.message;ensureSchema 升全局 /api 门(好友/对战/lore 表冷启动首打 500 修复)
+### 性能(阶段3,a44ac7c)
+- tenpull:10 次独立事务 → 1 个事务(drawCore 提取),serverless 往返 10→1;缺口/重放语义不变(v23 套件钉死)
+- /api/friends 三查询并行;无界查询补 LIMIT(收藏 500/pending 50/trades 200/卡池 200);catalogNames 60s 进程内缓存(chat 每请求全表读)
+### 过程抓到的 bug
+1. **限流倍率 dotenv 时序**:SCALE 在模块导入时求值,先于 createApp() 的 loadEnvFile → 本地 .env.local 永远读不到,套件 429 → 改惰性读取。教训:模块顶层读 env 的代码,必须保证 env 注入先于导入(dotenv 时序经典)
+2. v23-e2e 首版对"缺口订单重放"的预设(10 张)与真实契约(重放 7 张+缺口 3)不符——修正断言以钉死真实行为
+3. client.js 复发项目文档坑:.js 内写 TS 参数属性(public status)→ esbuild 静默解析失败
+### 验证
+- 四套件:v23 24/24 + e2e 36/36 + friends 43/44(限流器上线后扩展了 1 条)+ engine 17/17
+- 生产:部署 Ready(r7qg1byus);安全头/登录/抽卡链路经本地等价代码验证;生产浏览器 smoke 因本机到 vercel.app 网络持续中断暂缓,恢复后补做
+- 状态:验收通过(生产 smoke 待网络恢复补做一项)
