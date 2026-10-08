@@ -22,7 +22,7 @@ import {
   sessionCookie,
   userFromRequest,
 } from "./auth.js";
-import { GachaError, PACKS, dailyBonus, drawCard, myCollection, pityStatus, walletHistory } from "./gacha.js";
+import { PACKS, dailyBonus, drawCard, myCollection, pityStatus, tenpull, walletHistory } from "./gacha.js";
 
 export function mountPhase1(): express.Router {
   const router = express.Router();
@@ -133,30 +133,13 @@ export function mountPhase1(): express.Router {
     if (!/^[a-zA-Z0-9-]{8,56}$/.test(orderId)) {
       throw new HttpError(400, "订单号格式不正确", "invalid_order_id");
     }
-    const TEN = 10;
-    const cards = [];
-    let replayCount = 0;
-    let shortfall = 0;
-    for (let i = 0; i < TEN; i++) {
-      const subKey = `${orderId}-s${i}`;
-      try {
-        const r = await drawCard({ userId: user.id, username: user.username, packId: pack.id, orderId: subKey });
-        cards.push(r.card);
-        if (r.replay) replayCount++;
-      } catch (err: any) {
-        if (err instanceof GachaError && err.status === 402) {
-          // 每张子抽独立扣费,未抽的本就没扣——如实报告 shortfall
-          shortfall = TEN - i;
-          break;
-        }
-        throw err;
-      }
-    }
-    const bal = await q<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [user.id]);
+    const { cards, replayCount, shortfall, balance } = await tenpull({
+      userId: user.id, username: user.username, packId: pack.id, orderId,
+    });
     res.json({
       cards,
-      balance: bal.rows[0]?.balance ?? 0,
-      replay: replayCount === TEN && replayCount > 0,
+      balance,
+      replay: replayCount === 10 && replayCount > 0,
       replayCount,
       shortfall,
     });

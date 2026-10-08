@@ -12,15 +12,19 @@
 import { q } from "./db.js";
 
 /** Tests set RATE_LIMIT_SCALE (e.g. 1000) to widen every budget; prod leaves
- *  it unset → scale 1. */
-const SCALE = Math.max(1, Math.floor(Number(process.env.RATE_LIMIT_SCALE ?? "1")) || 1);
+ *  it unset → scale 1. Read LAZILY: .env.local is loaded inside createApp(),
+ *  AFTER module imports — a top-level const would see an un-injected env
+ *  (classic dotenv ordering bug, caught by the suites 429ing locally). */
+function scale(): number {
+  return Math.max(1, Math.floor(Number(process.env.RATE_LIMIT_SCALE ?? "1")) || 1);
+}
 
 /**
  * Record one attempt for `ident` and decide. Rolling window: allows up to
  * `limit` attempts per `windowSec` (scaled by RATE_LIMIT_SCALE).
  */
 export async function allowRate(ident: string, limit: number, windowSec: number): Promise<boolean> {
-  const cap = Math.max(1, Math.ceil(limit * SCALE));
+  const cap = Math.max(1, Math.ceil(limit * scale()));
   try {
     // One round trip: sampled prune of ancient rows (5%), record this
     // attempt, then count PRIOR attempts in the window (the CTE's own insert
