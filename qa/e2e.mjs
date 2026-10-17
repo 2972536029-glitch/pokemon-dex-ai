@@ -85,12 +85,15 @@ r = await req("GET", "/api/collection", { jar: "u2" });
 check("E1 跨用户隔离", Array.isArray(r.json?.cards) && r.json.cards.length === 0, r.text);
 
 // ---- v1.2: battle flow ----
-// draw down to have 3+ cards (qatest has 1-2 from earlier draws; draw 2 more)
-r = await req("POST", "/api/packs/basic/draw", { body: { orderId: oid(21) } });
-r = await req("POST", "/api/packs/basic/draw", { body: { orderId: oid(22) } });
+// 抽到凑够 3 种为止(固定抽 2 张在随机卡池下会概率性翻车——2026-10-17 实测踩中)
 let cards = [];
-r = await req("GET", "/api/collection");
-cards = r.json?.cards ?? [];
+for (let i = 21; i < 40; i++) {
+  r = await req("GET", "/api/collection");
+  cards = r.json?.cards ?? [];
+  if (cards.length >= 3) break;
+  if (Number(r.json?.balance ?? 100) < 100) break; // 余额不足就认命(下面的断言会红)
+  await req("POST", "/api/packs/basic/draw", { body: { orderId: oid(i) } });
+}
 check("V1 收藏至少3种可编队", cards.length >= 3, `have ${cards.length}`);
 
 // invalid team: duplicated ids (3 slots but not 3 DISTINCT pokemon)
@@ -114,10 +117,18 @@ check("V7 重复 start 复用同一战斗", r.json?.battleId === battleId && r.j
 // state
 r = await req("GET", `/api/battle/${battleId}/state`);
 check("V8 状态快照", r.json?.state?.turn >= 1, r.text);
+// v3 fields: version, energy, opening telegraph
+check("V5b v3 版本号与开局意图", r.json?.state?.version === 3 && Boolean(r.json?.state?.aiIntent), r.text.slice(0, 120));
+check("V5c 全队能量字段", (r.json?.state?.userTeam ?? []).every(m => typeof m.energy === "number"), r.text.slice(0, 120));
 // play a turn (move of active mon)
 const activeMoves = r.json?.state?.userTeam?.[r.json.state.activeUser]?.moves ?? [];
 r = await req("POST", `/api/battle/${battleId}/turn`, { body: { action: { kind: "move", moveId: activeMoves[0]?.id } } });
 check("V9 回合结算有事件", Array.isArray(r.json?.events) && r.json.events.length > 0, r.text);
+check("V9b 结算后仍带下回合意图", Boolean(r.json?.state?.aiIntent) || r.json?.state?.status !== "active", r.text.slice(0, 120));
+// v3 guard action
+r = await req("POST", `/api/battle/${battleId}/turn`, { body: { action: { kind: "guard" } } });
+check("V9c 防御行动合法", r.status === 200 && Array.isArray(r.json?.events), r.text.slice(0, 120));
+// guard is v3-only: legacy rejection shape still guarded server-side by engine tolerance
 check("V10 战斗仍激活或已结束", ["active","won","lost"].includes(r.json?.state?.status), r.text);
 // other user cannot see this battle
 r = await req("GET", `/api/battle/${battleId}/state`, { jar: "u2" });

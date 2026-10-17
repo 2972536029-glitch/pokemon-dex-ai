@@ -3718,3 +3718,153 @@ body::before, body::after { transform: translateZ(0); }
   color: var(--text-2);
 }
 
+/* ==================== v3.0 战斗:意图气泡 × 能量条 × 防御 ==================== */
+
+/* 能量条:HP 条下方一条细金条,宽度过渡随回放跳动 */
+.energy-track {
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+:root:not([data-theme="dark"]) .energy-track {
+  background: rgba(31, 41, 51, 0.12);
+}
+.energy-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #6fd3ff, var(--pikachu-yellow));
+  box-shadow: 0 0 8px rgba(255, 213, 94, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: width 0.5s var(--ease-out);
+}
+
+/* 意图气泡:悬在 AI 精灵上方——本回合它将做什么 */
+.arena-side {
+  position: relative;
+}
+.intent-bubble {
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 230px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  animation: intent-pop 0.35s var(--ease-spring);
+}
+:root:not([data-theme="dark"]) .intent-bubble {
+  background: var(--bg-card);
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+.intent-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 9px;
+  height: 9px;
+  background: inherit;
+  border-right: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+}
+.intent-icon {
+  font-size: 14px;
+}
+.intent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.intent-bubble.tier-quick { border-color: rgba(111, 211, 255, 0.6); }
+.intent-bubble.tier-heavy { border-color: rgba(255, 145, 60, 0.65); }
+.intent-bubble.tier-ult {
+  border-color: var(--gold);
+  box-shadow: 0 0 16px rgba(255, 200, 60, 0.4);
+}
+.intent-bubble.tier-guard { border-color: rgba(140, 220, 170, 0.6); }
+@keyframes intent-pop {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.85); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* 意图提示行:dock 顶部的一句话读题 */
+.intent-hint {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(255, 213, 94, 0.08);
+  border: 1px dashed rgba(255, 200, 60, 0.4);
+}
+
+/* 招式按钮:档位左边条 + 费用徽章 */
+.move-btn { position: relative; }
+.move-btn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12%;
+  bottom: 12%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--move-color, var(--poke-blue));
+  opacity: 0.9;
+}
+.move-btn.tier-quick::before { background: #6fd3ff; }
+.move-btn.tier-heavy::before { background: #ff913c; box-shadow: 0 0 8px rgba(255, 145, 60, 0.5); }
+.move-btn.tier-ult::before {
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-deep));
+  box-shadow: 0 0 10px rgba(255, 200, 60, 0.6);
+}
+.move-btn:disabled {
+  opacity: 0.38;
+  filter: grayscale(0.7);
+}
+.move-cost {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--gold-hi);
+  text-shadow: 0 0 6px rgba(255, 200, 60, 0.5);
+}
+:root:not([data-theme="dark"]) .move-cost {
+  color: var(--gold-deep);
+  text-shadow: none;
+}
+.guard-btn::before { background: #8cdcaa; }
+.guard-btn .move-name { color: #a8e6c3; }
+:root:not([data-theme="dark"]) .guard-btn .move-name { color: #2f7d4f; }
+
+/* 防御事件的弹字 */
+.dmg-popup.pop-guard {
+  color: #a8e6c3;
+  font-size: 26px;
+  text-shadow: 0 0 18px rgba(140, 220, 170, 0.8);
+}
+
+@media (max-width: 720px) {
+  .intent-bubble {
+    top: -30px;
+    max-width: 170px;
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  .intent-hint { font-size: 12px; }
+}
+

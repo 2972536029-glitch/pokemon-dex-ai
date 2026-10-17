@@ -42,6 +42,12 @@ export interface Move {
   name: string;
   type: PType;
   power: number;
+  /** v3: energy cost (legacy moves carry none; v3 engine treats missing as 0) */
+  cost?: number;
+  /** v3: priority bracket (quick moves strike first regardless of speed) */
+  priority?: number;
+  /** v3: move tier for UI affordances */
+  tier?: "quick" | "strike" | "heavy" | "ult";
 }
 
 const TACKLE: Move = { id: "tackle", name: "撞击", type: "normal", power: 40 };
@@ -83,6 +89,8 @@ export interface BattleMon {
   maxHp: number;
   hp: number;
   moves: Move[];
+  /** v3: energy meter 0-100 (legacy states carry none; v3 engine defaults) */
+  energy?: number;
 }
 
 /** Clamp hp to [0, maxHp] for every mon. Historical battles persisted before
@@ -104,21 +112,34 @@ function healMonUrls<T extends BattleMon>(mon: T): T {
 export function clampBattleState<T extends { userTeam: BattleMon[]; aiTeam: BattleMon[] }>(state: T): T {
   for (const mon of [...state.userTeam, ...state.aiTeam]) {
     mon.hp = Math.min(Math.max(0, mon.hp), mon.maxHp);
+    if (typeof mon.energy === "number") {
+      mon.energy = Math.min(Math.max(0, Math.round(mon.energy)), ENERGY.CAP);
+    }
     healMonUrls(mon);
   }
   return state;
 }
 
-/** Build a battle-ready mon from a catalog card (level-50 simplification). */
+/** Build a battle-ready mon from a catalog card (level-50 simplification).
+ *  v3 battles pass { v3: true } for the four-tier moveset + energy; the
+ *  default keeps the legacy moveset so the friend-battle simulator and
+ *  historical states behave bit-identically. */
 export function battleMonFromCard(card: {
   id: number; name: string; zh_name?: string | null; rarity: string;
   types: string[]; stats: Record<string, number>; sprite?: string | null;
-}): BattleMon {
+}, opts?: { v3?: boolean }): BattleMon {
   const types = card.types as PType[];
-  const moves: Move[] = [TACKLE];
-  for (const t of types.slice(0, 2)) {
-    const m = TYPE_MOVES[t];
-    if (m && m.id !== "tackle") moves.push(m);
+  let moves: Move[];
+  let energy: number | undefined;
+  if (opts?.v3) {
+    moves = buildV3Moves(types);
+    energy = ENERGY.START;
+  } else {
+    moves = [TACKLE];
+    for (const t of types.slice(0, 2)) {
+      const m = TYPE_MOVES[t];
+      if (m && m.id !== "tackle") moves.push(m);
+    }
   }
   return {
     cardId: card.id,
@@ -132,6 +153,7 @@ export function battleMonFromCard(card: {
     maxHp: (card.stats.hp ?? 50) + 60,
     hp: (card.stats.hp ?? 50) + 60,
     moves,
+    energy,
   };
 }
 
@@ -153,17 +175,36 @@ export interface BattleState {
   mode?: "rule" | "reasoned";
   /** Persisted turn narrative (appended by the battle routes). */
   log?: LogEntry[];
+  /** v3: engine generation marker (intent + energy battles). */
+  version?: number;
+  /** v3: the AI's COMMITTED action for the CURRENT player turn — generated
+   *  after each resolution and telegraphed to the player before they act. */
+  aiIntent?: Intent | null;
 }
 
 export type Action =
   | { kind: "move"; moveId: string }
   | { kind: "switch"; index: number };
 
+/** v3 adds guard to the action vocabulary (halve incoming + bank energy). */
+export type V3Action = Action | { kind: "guard" };
+
+/** v3: the telegraphed AI plan. label is UI-ready Chinese. */
+export interface Intent {
+  kind: "move" | "guard" | "switch";
+  moveId?: string;
+  index?: number;
+  tier?: Move["tier"];
+  label: string;
+}
+
 export interface TurnEvent {
-  kind: "move" | "switch" | "ko" | "end" | "info";
+  kind: "move" | "switch" | "ko" | "end" | "info" | "guard";
   actor: "user" | "ai" | "system";
   text: string;
   damage?: number;
+  /** v3: energy deltas for UI replay (popup + bar animation). */
+  energy?: Array<{ side: "user" | "ai"; amount: number }>;
 }
 
 export interface Rng {
@@ -365,4 +406,294 @@ export function pickAiTeam(catalog: CatalogMon[], rng: Rng = systemRng): Catalog
     picks.push(pool.splice(Math.floor(rng.next() * pool.length), 1)[0]);
   }
   return picks;
+}
+
+// ==================== v3 战斗引擎:意图 × 能量 × 弱点节奏 ====================
+// 设计依据 docs/updates/v3.0-battle-rework.md(调研驱动的四件套):
+// 1. 意图预告(Slay the Spire)——AI 行动在玩家出手前掷定并如实展示,反制真实。
+// 2. 能量经济(Bravely Default/StS)——招式四档定价,防御=储蓄,进攻=透支。
+// 3. 弱点回能(Persona One More 的行动经济转译)——打克制回能量,双向对称。
+// 4. AI 混合策略(Smogon 预测理论)——top-3 加权抽样,倾向可读、不能背板。
+// 旧的 resolveTurn 保留:好友 PvP 模拟器与存量战斗仍走它,语义零变化。
+
+export const ENERGY = {
+  START: 25,
+  REGEN_ACTIVE: 15,
+  REGEN_BENCH: 5,
+  GUARD: 35,
+  SWITCH_IN: 10,
+  PAIN: 10,
+  WEAKNESS: 20,
+  CAP: 100,
+} as const;
+
+const V3_TIERS = [
+  { key: "quick", suffix: "·迅", power: 40, cost: 0, priority: 1 },
+  { key: "strike", suffix: "", power: 65, cost: 25, priority: 0 },
+  { key: "heavy", suffix: "·重", power: 95, cost: 45, priority: 0 },
+  { key: "ult", suffix: "·极", power: 135, cost: 90, priority: 0 },
+] as const;
+
+/** 四档招式派生:迅/强用主属性,重招用第二属性(双属性才有覆盖面),极招主属性。 */
+function buildV3Moves(types: PType[]): Move[] {
+  const t1 = types[0] ?? "normal";
+  const t2 = types[1] ?? t1;
+  const base1 = TYPE_MOVES[t1] ?? TACKLE;
+  const base2 = TYPE_MOVES[t2] ?? TACKLE;
+  return V3_TIERS.map((tier, i) => {
+    const base = i === 2 ? base2 : base1; // heavy rides the secondary type
+    const id = tier.key === "strike" ? base.id : `${base.id}-${tier.key === "quick" ? "q" : tier.key === "heavy" ? "h" : "u"}`;
+    return {
+      id,
+      name: `${base.name}${tier.suffix}`,
+      type: base.type,
+      power: tier.power,
+      cost: tier.cost,
+      priority: tier.priority,
+      tier: tier.key,
+    } satisfies Move;
+  });
+}
+
+function addEnergy(events: TurnEvent[], side: "user" | "ai", mon: BattleMon, amount: number): void {
+  if (amount <= 0) return;
+  mon.energy = Math.min(ENERGY.CAP, (mon.energy ?? ENERGY.START) + amount);
+  (events[events.length - 1].energy ??= []).push({ side, amount });
+}
+
+/** v3 damage: same school as legacy but variance tightened to 10% (fairness
+ *  principle — no crits, no accuracy rolls; randomness lives in AI sampling). */
+function damageV3(attacker: BattleMon, move: Move, defender: BattleMon, rng: Rng): { dmg: number; eff: number } {
+  const eff = effectiveness(move.type, defender.types);
+  if (eff === 0) return { dmg: 0, eff };
+  const spec = SPECIAL_TYPES.has(move.type);
+  const atk = spec ? attacker.stats["special-attack"] : attacker.stats.attack;
+  const def = spec ? defender.stats["special-defense"] : defender.stats.defense;
+  const stab = attacker.types.includes(move.type) ? 1.5 : 1;
+  const variance = 0.9 + rng.next() * 0.1;
+  const base = Math.floor((22 * move.power * atk) / Math.max(1, def) / 50 + 2);
+  return { dmg: Math.max(1, Math.floor(base * stab * eff * variance)), eff };
+}
+
+/** Deterministic expected damage (no variance) for AI scoring. */
+export function estDamage(attacker: BattleMon, move: Move, defender: BattleMon): number {
+  const eff = effectiveness(move.type, defender.types);
+  if (eff === 0) return 0;
+  const spec = SPECIAL_TYPES.has(move.type);
+  const atk = spec ? attacker.stats["special-attack"] : attacker.stats.attack;
+  const def = spec ? defender.stats["special-defense"] : defender.stats.defense;
+  const stab = attacker.types.includes(move.type) ? 1.5 : 1;
+  return Math.max(1, Math.floor((22 * move.power * atk) / Math.max(1, def) / 50 + 2) * stab * eff);
+}
+
+const energyOf = (m: BattleMon) => m.energy ?? ENERGY.START;
+const costOf = (m: Move) => m.cost ?? 0;
+const priorityOf = (m: Move) => m.priority ?? 0;
+
+/** Resolve one v3 turn. Order: regen → switches (+momentum) → guards (bank)
+ *  → moves by priority/speed (guard halves; weakness/pain bank energy) →
+ *  KO auto-replace → guards cleared. The NEXT ai intent is NOT set here —
+ *  routes own intent lifecycle (rule vs reasoned generation). */
+export function resolveBattleTurn(
+  state: BattleState,
+  userAction: V3Action,
+  aiAction: V3Action,
+  rng: Rng = systemRng
+): { state: BattleState; events: TurnEvent[] } {
+  if (state.status !== "active") throw new Error("battle is not active");
+  const events: TurnEvent[] = [];
+  const guards = new Set<"user" | "ai">();
+
+  // 1) 回合开始回能:在场+15,替补热身+5(静默,条形图随新状态跳变)
+  for (const mon of state.userTeam) {
+    const bench = mon !== state.userTeam[state.activeUser];
+    if (mon.hp > 0) mon.energy = Math.min(ENERGY.CAP, energyOf(mon) + (bench ? ENERGY.REGEN_BENCH : ENERGY.REGEN_ACTIVE));
+  }
+  for (const mon of state.aiTeam) {
+    const bench = mon !== state.aiTeam[state.activeAi];
+    if (mon.hp > 0) mon.energy = Math.min(ENERGY.CAP, energyOf(mon) + (bench ? ENERGY.REGEN_BENCH : ENERGY.REGEN_ACTIVE));
+  }
+
+  // 2) 换人先行(玩家侧优先):换上来的精灵 +10 动量能量
+  const doSwitch = (actor: "user" | "ai", a: V3Action) => {
+    if (a.kind !== "switch") return;
+    const ok = applySwitch(state, actor, a.index, events);
+    if (ok) {
+      const team = actor === "user" ? state.userTeam : state.aiTeam;
+      const idx = actor === "user" ? state.activeUser : state.activeAi;
+      const mon = team[idx];
+      events.push({ kind: "info", actor, text: `${mon.zhName ?? mon.name} 蓄势待发(⚡+${ENERGY.SWITCH_IN})` });
+      addEnergy(events, actor, mon, ENERGY.SWITCH_IN);
+    }
+  };
+  doSwitch("user", userAction);
+  doSwitch("ai", aiAction);
+
+  // 3) 防御标记:受伤减半 + 回能(储蓄)
+  const doGuard = (actor: "user" | "ai", a: V3Action) => {
+    if (a.kind !== "guard") return;
+    guards.add(actor);
+    const team = actor === "user" ? state.userTeam : state.aiTeam;
+    const idx = actor === "user" ? state.activeUser : state.activeAi;
+    const mon = team[idx];
+    events.push({ kind: "guard", actor, text: `${mon.zhName ?? mon.name} 摆出了防御姿态!(本回合受伤减半)` });
+    addEnergy(events, actor, mon, ENERGY.GUARD);
+  };
+  doGuard("user", userAction);
+  doGuard("ai", aiAction);
+
+  // 4) 出招:先制度 → 速度 → 掷随机。能量不足自动降档为迅招(免费)。
+  if (state.status === "active") {
+    const u = state.userTeam[state.activeUser];
+    const a = state.aiTeam[state.activeAi];
+    const uPr = userAction.kind === "move" ? priorityOf(u.moves.find((m) => m.id === userAction.moveId) ?? u.moves[0]) : -Infinity;
+    const aPr = aiAction.kind === "move" ? priorityOf(a.moves.find((m) => m.id === aiAction.moveId) ?? a.moves[0]) : -Infinity;
+    let order: Array<"user" | "ai">;
+    if (uPr !== aPr) order = uPr > aPr ? ["user", "ai"] : ["ai", "user"];
+    else if (u.stats.speed !== a.stats.speed) order = u.stats.speed > a.stats.speed ? ["user", "ai"] : ["ai", "user"];
+    else order = rng.next() < 0.5 ? ["user", "ai"] : ["ai", "user"];
+
+    for (const actor of order) {
+      if (state.status !== "active") break;
+      const act = actor === "user" ? userAction : aiAction;
+      if (act.kind !== "move") continue; // switch/guard already resolved
+      const team = actor === "user" ? state.userTeam : state.aiTeam;
+      const idx = actor === "user" ? state.activeUser : state.activeAi;
+      const mon = team[idx];
+      if (!alive(mon)) continue;
+      let move = mon.moves.find((m) => m.id === act.moveId) ?? mon.moves[0];
+      if (costOf(move) > energyOf(mon)) {
+        // 与旧引擎「非法招式回退普招」同款容错:能量不足自动降档
+        const quick = mon.moves.find((m) => costOf(m) === 0) ?? mon.moves[0];
+        events.push({ kind: "info", actor, text: `能量不足,自动改用 ${quick.name}` });
+        move = quick;
+      }
+      mon.energy = energyOf(mon) - costOf(move);
+
+      const defSide = actor === "user" ? "ai" : "user";
+      const defTeam = defSide === "user" ? state.userTeam : state.aiTeam;
+      const defIdx = defSide === "user" ? state.activeUser : state.activeAi;
+      const defMon = defTeam[defIdx];
+
+      events.push({ kind: "move", actor, text: "", damage: 0 }); // anchor replaced below
+      const anchor = events.length - 1;
+      const { dmg: rawDmg, eff } = damageV3(mon, move, defMon, rng);
+      const dmg = guards.has(defSide) ? Math.ceil(rawDmg / 2) : rawDmg;
+      defMon.hp = Math.max(0, defMon.hp - dmg);
+      const zh = mon.zhName ? `${mon.zhName}(${mon.name})` : mon.name;
+      const targetZh = defMon.zhName ? `${defMon.zhName}(${defMon.name})` : defMon.name;
+      const effSuffix = effText(eff) ? `,${effText(eff)}` : "";
+      const guardSuffix = guards.has(defSide) ? "(防御减半)" : "";
+      events[anchor] = {
+        kind: "move",
+        actor,
+        text: `${zh} 使用了 ${move.name},对 ${targetZh} 造成 ${dmg} 点伤害${effSuffix}${guardSuffix}`,
+        damage: dmg,
+      };
+      // 弱点回能(≥2x,双向对称)+ 痛感回能
+      if (eff >= 2) addEnergy(events, actor, mon, ENERGY.WEAKNESS);
+      if (dmg > 0) addEnergy(events, defSide, defMon, ENERGY.PAIN);
+
+      if (defMon.hp === 0) {
+        events.push({ kind: "ko", actor: defSide, text: `${targetZh} 倒下了!` });
+        const next = defTeam.findIndex(alive);
+        if (next === -1) {
+          state.status = actor === "user" ? "won" : "lost";
+          events.push({ kind: "end", actor: "system", text: actor === "user" ? "你赢得了战斗!" : "AI 对手赢得了战斗…" });
+        } else {
+          if (defSide === "user") state.activeUser = next;
+          else state.activeAi = next;
+          const newMon = defTeam[next];
+          const nzh = newMon.zhName ? `${newMon.zhName}(${newMon.name})` : newMon.name;
+          events.push({ kind: "switch", actor: defSide, text: `接下来是 ${nzh}!` });
+        }
+      }
+    }
+  }
+
+  if (state.status === "active") state.turn += 1;
+  return { state, events };
+}
+
+/** 把持久化的意图转成引擎动作(路由层调用)。 */
+export function intentToAction(intent: Intent | null | undefined): V3Action | null {
+  if (!intent) return null;
+  if (intent.kind === "move" && typeof intent.moveId === "string") return { kind: "move", moveId: intent.moveId };
+  if (intent.kind === "guard") return { kind: "guard" };
+  if (intent.kind === "switch" && Number.isInteger(intent.index)) {
+    return { kind: "switch", index: intent.index as number };
+  }
+  return null;
+}
+
+/** 意图是否仍对当前局面有效(换人后旧招式/替补编号可能失效)。 */
+export function intentStillValid(state: BattleState, intent: Intent | null | undefined): boolean {
+  if (!intent) return false;
+  const ai = state.aiTeam[state.activeAi];
+  if (intent.kind === "move") {
+    const move = ai.moves.find((m) => m.id === intent.moveId);
+    return move ? costOf(move) <= energyOf(ai) : false;
+  }
+  if (intent.kind === "switch") {
+    const i = intent.index ?? -1;
+    return i >= 0 && i < state.aiTeam.length && i !== state.activeAi && alive(state.aiTeam[i]);
+  }
+  return intent.kind === "guard";
+}
+
+/**
+ * v3 mixed-strategy brain (the Smogon lesson: never a fixed script). Scores
+ * every legal action, then samples from the top-3 with 0.62/0.28/0.10 — the
+ * player can read tendencies over time but cannot memorize a script.
+ */
+export function generateAiIntent(state: BattleState, rng: Rng = systemRng): Intent {
+  const ai = state.aiTeam[state.activeAi];
+  const user = state.userTeam[state.activeUser];
+  const candidates: Array<{ intent: Intent; score: number }> = [];
+
+  for (const move of ai.moves) {
+    if (costOf(move) > energyOf(ai)) continue;
+    let score = estDamage(ai, move, user);
+    if (score >= user.hp) score *= 1.6; // KO potential
+    if (move.tier === "ult" && score < user.hp * 0.5) score *= 0.7; // don't waste the ult
+    candidates.push({
+      intent: { kind: "move", moveId: move.id, tier: move.tier, label: `${move.name} · 威力${move.power}` },
+      score,
+    });
+  }
+
+  // Guard: banking energy + halving the incoming hit; values survival.
+  const threat = Math.max(...user.moves.map((m) => estDamage(user, m, ai)));
+  let guardScore = 22;
+  if (ai.hp < ai.maxHp * 0.4) guardScore += 45;
+  if (energyOf(ai) >= 55) guardScore += 20;
+  if (threat >= ai.hp * 0.5) guardScore += 25;
+  candidates.push({ intent: { kind: "guard", label: "防御蓄力 · 受伤减半⚡+35" }, score: guardScore });
+
+  // Switch: escape a hard-counter matchup for a better one.
+  const currentBest = Math.max(...ai.moves.map((m) => estDamage(ai, m, user)));
+  state.aiTeam.forEach((mon, i) => {
+    if (i === state.activeAi || !alive(mon)) return;
+    const benchBest = Math.max(...mon.moves.map((m) => estDamage(mon, m, user)));
+    const gap = benchBest - currentBest;
+    const countered = effectiveness(user.moves[0]?.type ?? "normal", ai.types) >= 2;
+    if (gap > 25 || (countered && gap > 0)) {
+      const name = mon.zhName ?? mon.name;
+      candidates.push({
+        intent: { kind: "switch", index: i, label: `换上 ${name}` },
+        score: 25 + gap * 0.3 + (countered ? 30 : 0),
+      });
+    }
+  });
+
+  candidates.sort((a, b) => b.score - a.score);
+  const top = candidates.slice(0, 3);
+  const weights = [0.62, 0.28, 0.1].slice(0, top.length);
+  const total = weights.reduce((s, w) => s + w, 0);
+  let roll = rng.next() * total;
+  for (let i = 0; i < top.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return top[i].intent;
+  }
+  return top[0].intent;
 }

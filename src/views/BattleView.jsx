@@ -32,6 +32,11 @@ function Nameplate({ mon }) {
         <span className={`rarity-badge rarity-${mon.rarity}`}>{RARITY_LABEL[mon.rarity] || mon.rarity}</span>
       </div>
       <HpBar mon={mon} />
+      {mon.energy != null && (
+        <div className="energy-track" role="img" aria-label={`能量 ${mon.energy}/100`}>
+          <div className="energy-fill" style={{ width: `${mon.energy}%` }} />
+        </div>
+      )}
       <div className="plate-nums">
         <span>
           {mon.hp}/{mon.maxHp}
@@ -240,6 +245,16 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     const myBattleId = battle.battleId; // 哨兵:播放期间战斗被换掉则停止落状态
     const view = JSON.parse(JSON.stringify(battle.state));
 
+    // 能量增量即时回放:条形图随事件跳动(与 HP 手动递减同一套逻辑)
+    const applyEnergy = (deltas) => {
+      for (const d of deltas ?? []) {
+        const team = d.side === "user" ? view.userTeam : view.aiTeam;
+        const idx = d.side === "user" ? view.activeUser : view.activeAi;
+        const mon = team?.[idx];
+        if (mon) mon.energy = Math.min(100, Math.max(0, (mon.energy ?? 25) + d.amount));
+      }
+    };
+
     for (const ev of events) {
       if (myBattleId !== battleIdRef.current) break; // 已被投降/重开/换场
       if (ev.kind === "move") {
@@ -258,12 +273,25 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         const defIdx = defSide === "user" ? view.activeUser : view.activeAi;
         const defMon = (defSide === "user" ? view.userTeam : view.aiTeam)[defIdx];
         defMon.hp = Math.max(0, defMon.hp - (ev.damage ?? 0));
+        applyEnergy(ev.energy);
         setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
         await sleep(750);
         setPopup(null);
         setHitFlash(null);
         setStageImpact(false);
         await sleep(250);
+      } else if (ev.kind === "guard") {
+        setPopup({ side: ev.actor, text: "🛡️", cls: "pop-guard" });
+        applyEnergy(ev.energy);
+        setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
+        await sleep(700);
+        setPopup(null);
+        await sleep(200);
+      } else if (ev.energy?.length) {
+        // 纯能量事件(换人蓄势等):条跳动 + 短停顿,不遮画面
+        applyEnergy(ev.energy);
+        setBattle({ battleId: battle.battleId, state: { ...view, log: finalState.log } });
+        await sleep(450);
       } else {
         setBattle({ battleId: battle.battleId, state: finalState });
         await sleep(900);
@@ -310,6 +338,9 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
     const u = s.userTeam[s.activeUser];
     const a = s.aiTeam[s.activeAi];
     const finished = s.status !== "active";
+    const isV3 = s.version === 3;
+    const intent = isV3 ? s.aiIntent : null;
+    const INTENT_ICON = { move: "⚔️", guard: "🛡️", switch: "🔄" };
     const bench = s.userTeam.map((m, i) => ({ m, i })).filter(({ m, i }) => i !== s.activeUser && m.hp > 0);
     const log = (s.log ?? []).slice(-14);
     const popupFor = (side) => (popup?.side === side ? popup : null);
@@ -334,6 +365,12 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
               <span>VS</span>
             </div>
             <div className={`arena-side arena-side-ai ${lunge === "ai" ? "is-lunging" : ""} ${hitFlash === "ai" ? "is-hit" : ""}`}>
+              {intent && !finished && (
+                <div className={`intent-bubble tier-${intent.tier ?? intent.kind}`} aria-label={`对手意图:${intent.label}`}>
+                  <span className="intent-icon" aria-hidden="true">{INTENT_ICON[intent.kind] ?? "❓"}</span>
+                  <span className="intent-label">{intent.label}</span>
+                </div>
+              )}
               <ArenaMon mon={a} side="ai" popup={popupFor("ai")} />
             </div>
             {s.status === "won" && confetti && (
@@ -369,32 +406,52 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
 
         {!finished && (
           <div className="battle-dock">
+            {intent && (
+              <p className="intent-hint" aria-live="polite">
+                👁️ 对手意图:{intent.label} —— 想好怎么应对再出招
+              </p>
+            )}
             <div className="dock-moves">
-              <div className="dock-label">招式</div>
+              <div className="dock-label">招式{isV3 ? "(⚡ 为能量费用)" : ""}</div>
               <div className="moves">
                 {u.moves.map((m) => {
                   const eff = effectiveness(m.type, a.types);
                   const effTag = eff >= 2 ? "▲" : eff === 0 ? "✕" : eff < 1 ? "▼" : "";
+                  const cost = m.cost ?? 0;
+                  const afford = !isV3 || cost <= (u.energy ?? 0);
                   return (
                     <button
                       key={m.id}
                       type="button"
-                      className="move-btn"
+                      className={`move-btn tier-${m.tier ?? "strike"}`}
                       style={{ "--move-color": TYPE_COLORS[m.type] }}
-                      disabled={busy || playing}
+                      disabled={busy || playing || !afford}
+                      title={!afford ? "能量不足" : undefined}
                       onClick={() => postAction({ kind: "move", moveId: m.id })}
                     >
                       <span className="move-name">{m.name}</span>
                       <span className="move-meta">
                         {typeZh(m.type)} · 威力{m.power} {effTag}
                       </span>
+                      {isV3 && <span className="move-cost">⚡{cost}</span>}
                     </button>
                   );
                 })}
+                {isV3 && (
+                  <button
+                    type="button"
+                    className="move-btn guard-btn"
+                    disabled={busy || playing}
+                    onClick={() => postAction({ kind: "guard" })}
+                  >
+                    <span className="move-name">🛡️ 防御蓄力</span>
+                    <span className="move-meta">受伤减半 · ⚡+35</span>
+                  </button>
+                )}
               </div>
             </div>
             <div className="dock-bench">
-              <div className="dock-label">替补(换人消耗一回合)</div>
+              <div className="dock-label">替补(换人消耗一回合{isV3 ? ",换上 ⚡+10" : ""})</div>
               {bench.map(({ m, i }) => (
                 <button
                   key={m.cardId}
@@ -403,7 +460,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
                   disabled={busy || playing}
                   onClick={() => postAction({ kind: "switch", index: i })}
                 >
-                  {displayName(m)} ({m.hp}/{m.maxHp})
+                  {displayName(m)} ({m.hp}/{m.maxHp}
+                  {isV3 ? ` ·⚡${m.energy ?? 0}` : ""})
                 </button>
               ))}
               <button type="button" className="bench-btn is-forfeit" disabled={busy || playing} onClick={forfeit}>

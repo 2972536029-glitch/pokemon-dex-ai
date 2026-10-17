@@ -405,8 +405,8 @@ export function mountFriends(): express.Router {
    */
   async function simulate(battleId: number, challengerCards: any[], targetCards: any[]) {
     const state: BattleState = {
-      userTeam: challengerCards.map(battleMonFromCard),
-      aiTeam: targetCards.map(battleMonFromCard),
+      userTeam: challengerCards.map((c) => battleMonFromCard(c)),
+      aiTeam: targetCards.map((c) => battleMonFromCard(c)),
       activeUser: 0,
       activeAi: 0,
       turn: 1,

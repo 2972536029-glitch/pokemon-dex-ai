@@ -14,10 +14,11 @@ import { HttpError, wrap } from "./http.js";
 import { addWalletTx } from "./wallet.js";
 import { AUTH_CONSTANTS } from "./auth.js";
 import {
-  BattleState, BattleMon, battleMonFromCard, chooseAiAction, pickAiTeam,
-  resolveTurn, Action, LogEntry, clampBattleState,
+  BattleState, battleMonFromCard, chooseAiAction, pickAiTeam,
+  resolveTurn, resolveBattleTurn, generateAiIntent, intentToAction,
+  intentStillValid, Action, V3Action, LogEntry, clampBattleState,
 } from "./battle.js";
-import { chooseAiActionReasoned } from "./battle-ai.js";
+import { chooseAiIntentReasoned } from "./battle-ai.js";
 
 const BATTLE_REWARD = 100;
 const TEAM_SIZE = 3;
@@ -129,15 +130,21 @@ export function mountBattle(): express.Router {
       `SELECT id, name, zh_name, rarity, types, stats, sprite FROM cards ORDER BY random() LIMIT ${TEAM_SIZE}`
     )).rows;
 
+    // v3 引擎:四档招式 + 能量 + 意图。开局即掷定 AI 首个意图(规则脑,
+    // reasoned 模式从第二回合起才由模型接手——开战响应不为此多等一次模型)。
     const state: BattleState = {
-      userTeam: userCards.map(battleMonFromCard),
-      aiTeam: aiPool.map(battleMonFromCard),
+      userTeam: userCards.map((c: any) => battleMonFromCard(c, { v3: true })),
+      aiTeam: aiPool.map((c: any) => battleMonFromCard(c, { v3: true })),
       activeUser: 0,
       activeAi: 0,
       turn: 1,
       status: "active",
       mode,
+      version: 3,
+      aiIntent: null,
     };
+    const intentRng = { next: () => crypto.randomBytes(4).readUInt32BE(0) / 0x1_0000_0000 };
+    state.aiIntent = generateAiIntent(state, intentRng);
     const id = crypto.randomUUID();
     await q(
       `INSERT INTO battles (id, user_id, state, status) VALUES ($1, $2, $3, 'active')`,
@@ -185,46 +192,70 @@ export function mountBattle(): express.Router {
       res.status(409).json({ error: "finished", message: "这场战斗已经结束了" });
       return;
     }
+    const isV3 = row.state.version === 3;
     const action = req.body?.action ?? {};
     const valid =
       (action.kind === "move" && typeof action.moveId === "string") ||
-      (action.kind === "switch" && Number.isInteger(action.index));
+      (action.kind === "switch" && Number.isInteger(action.index)) ||
+      (isV3 && action.kind === "guard"); // guard only exists in the v3 engine
     if (!valid) {
       res.status(400).json({ error: "invalid_action", message: "无效的行动" });
       return;
     }
 
-    // AI action: reasoned mode asks the model (bounded by a 12s timeout) and
-    // falls back to the rule strategy on ANY failure — the battle can never
-    // stall because the advisor is down.
-    let aiAction: Action | null = null;
-    let aiReason: string | null = null;
-    if (row.state.mode === "reasoned") {
-      try {
-        const chosen = await chooseAiActionReasoned(row.state, clientSignal(req));
-        aiAction = chosen.action;
-        aiReason = chosen.reason;
-      } catch (err: any) {
-        console.warn("[battle] reasoned choice fell back to rules:", err?.message);
-        aiReason = "模型暂时不可用,本轮使用规则策略";
-      }
-    }
-    if (!aiAction) aiAction = chooseAiAction(row.state);
-
     const turnNo = row.state.turn; // log entries belong to THIS turn
     const rng = { next: () => crypto.randomBytes(4).readUInt32BE(0) / 0x1_0000_0000 };
-    const { state, events } = resolveTurn(
-      row.state,
-      action as Action,
-      aiAction,
-      rng
-    );
+    let events;
+    let state: BattleState;
+    let aiReason: string | null = null;
+
+    if (isV3) {
+      // v3: AI executes its COMMITTED intent (telegraphed to the player).
+      // If it no longer fits the board (mon changed / unaffordable), roll a
+      // fresh mixed-strategy pick — never stall.
+      const committed = intentStillValid(row.state, row.state.aiIntent)
+        ? row.state.aiIntent
+        : generateAiIntent(row.state, rng);
+      const aiAction: V3Action = intentToAction(committed) ?? { kind: "guard" };
+      ({ state, events } = resolveBattleTurn(row.state, action as V3Action, aiAction, rng));
+    } else {
+      // legacy path (pre-v3 active battles + unchanged semantics).
+      // Reasoned flavor is v3-only here: legacy reasoned battles fall to the
+      // rule brain (they are transient — every battle ends and disappears).
+      let aiAction: Action | null = null;
+      if (row.state.mode === "reasoned") {
+        aiReason = "旧版战斗结算中,本轮使用规则策略";
+      }
+      if (!aiAction) aiAction = chooseAiAction(row.state);
+      ({ state, events } = resolveTurn(row.state, action as Action, aiAction, rng));
+    }
+
     // Persist the turn narrative inside the state snapshot so a page reload
     // can still show the full battle log (state is the single source).
     const logEntries: LogEntry[] = [
       ...((row.state.log ?? []) as LogEntry[]),
       ...events.map((e) => ({ turn: turnNo, kind: e.kind, actor: e.actor, text: e.text })),
     ];
+
+    // v3: after resolution, roll the NEXT telegraphed intent (reasoned mode
+    // asks the model with the post-turn board; falls back to mixed strategy).
+    if (isV3 && state.status === "active") {
+      if (state.mode === "reasoned") {
+        try {
+          const chosen = await chooseAiIntentReasoned(state, clientSignal(req));
+          state.aiIntent = chosen.intent;
+          aiReason = chosen.reason;
+        } catch (err: any) {
+          console.warn("[battle] reasoned intent fell back to mixed strategy:", err?.message);
+          state.aiIntent = generateAiIntent(state, rng);
+          aiReason = null;
+        }
+      } else {
+        state.aiIntent = generateAiIntent(state, rng);
+      }
+    } else if (isV3) {
+      state.aiIntent = null;
+    }
     if (aiReason) {
       logEntries.push({ turn: turnNo, kind: "reason", actor: "ai", text: aiReason });
     }
