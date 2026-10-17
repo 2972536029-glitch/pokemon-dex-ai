@@ -8,7 +8,7 @@
 //   由服务端 upsert 覆盖,不会产生两条记录。
 import { useState } from "react";
 import { api } from "../api/client.js";
-import { telemetryIds } from "./telemetry.js";
+import { telemetryIds, trackAction } from "./telemetry.js";
 
 const FACES = [
   { score: 1, icon: "😞", label: "很差" },
@@ -47,6 +47,8 @@ export default function FeedbackPrompt({ context, title }) {
   async function submitScore(s) {
     setScore(s);
     setError(null);
+    // 双轨埋点:RUM addAction + 自建 usage(每日 KPI 数据源),评分即事件
+    trackAction("csat", { context, score: s });
     try {
       await api.post("/api/feedback", { context, score: s, anonId, sessionId });
       setPhase("comment");

@@ -1,18 +1,28 @@
-// 自建 RUM 上报客户端(v2.4):零依赖、批量、Beacon 兜底。
+// 观测上报客户端(v2.5):Datadog RUM 为主,自建管线为业务数据源,双轨职责切分。
 //
-// 为什么不用第三方统计:SaaS 需要注册账号且数据出站;这里需要的信号
-// (web-vitals / JS 错误 / 行为埋点 / 页面浏览)一张自建事件表就能承载,
-// 采样与字段完全自主。设计约束:
-// - 观测永不影响业务:所有失败静默;队列有背压上限,内存不随事件增长。
-// - 不阻塞主线程:10s 定时批量 flush;页面隐藏/关闭走 sendBeacon,
-//   失败不回捞(beacon 排队失败时页面通常已在卸载,回捞没有意义)。
-// - 错误上报双保险限流:单会话最多 10 条 + 同签名 10s 去重,防止
-//   持续性异常把队列和遥测表打爆(自体攻击防线)。
+// 职责边界(面试可讲:自建与 SaaS 不是二选一,是各取所长):
+// - Datadog RUM(env 门控,生产注入 VITE_DD_*):Web Vitals、JS 错误、视图、
+//   会话级明细——平台现成的看板/告警/留存,自建没法比。
+// - 自建管线(telemetry_events 表):usage 行为事件与 CSAT 反馈——这是业务
+//   数据源(评语必须落库,每日 cron 从这里聚合业务 KPI 推给 Datadog)。
+// - RUM 未配置(本地开发/未注入 env)时,自建管线全量兜底,行为不变。
+//
+// 设计约束不变:观测永不影响业务(失败静默)、队列背压上限、错误上报双保险限流。
 
 const ENDPOINT = "/api/telemetry";
 const QUEUE_LIMIT = 20;
 const FLUSH_INTERVAL_MS = 10_000;
 const MAX_ERROR_REPORTS_PER_SESSION = 10;
+
+// RUM 配置全部走构建期环境变量;缺任一关键字段则整体降级为自建兜底
+const RUM_CONFIG = {
+  clientToken: import.meta.env?.VITE_DD_CLIENT_TOKEN,
+  applicationId: import.meta.env?.VITE_DD_APPLICATION_ID,
+  site: import.meta.env?.VITE_DD_SITE || "datadoghq.com",
+  env: import.meta.env?.VITE_DD_ENV || "prod",
+  sessionSampleRate: Number(import.meta.env?.VITE_DD_SESSION_SAMPLE_RATE ?? 100),
+};
+const RUM_ENABLED = Boolean(RUM_CONFIG.clientToken && RUM_CONFIG.applicationId);
 
 function uuid() {
   try {
@@ -47,6 +57,11 @@ const queue = [];
 let errorReports = 0;
 let lastErrorSig = "";
 let lastErrorAt = 0;
+let rumReady = false;
+
+function ddRum() {
+  return rumReady ? window.DD_RUM : null;
+}
 
 function track(type, name, value, meta) {
   if (queue.length >= QUEUE_LIMIT) queue.shift(); // 背压:丢最旧,保内存上限
@@ -59,8 +74,9 @@ function track(type, name, value, meta) {
   });
 }
 
-/** 功能埋点:pull_ten / battle_win / chat_send / wiki_view … */
+/** 功能埋点:双轨——RUM addAction(会话上下文)+ 自建 usage(每日 KPI 数据源) */
 export function trackAction(name, meta) {
+  ddRum()?.addAction(name, meta ?? {});
   track("usage", name, undefined, meta);
 }
 
@@ -112,26 +128,50 @@ export function initTelemetry() {
   if (inited) return;
   inited = true;
 
-  // 页面浏览:hash 路由切换即 PV
-  const pv = () => track("pageview", window.location.hash || "#/home");
-  pv();
-  window.addEventListener("hashchange", pv);
+  // 视图:hash 路由。RUM 接管时用 startView(init 里已记首屏),否则自建 pageview
+  const onRouteChange = () => {
+    const route = window.location.hash || "#/home";
+    if (RUM_ENABLED) {
+      if (rumReady) ddRum()?.startView({ name: route });
+    } else {
+      track("pageview", route);
+    }
+  };
+  onRouteChange();
+  window.addEventListener("hashchange", onRouteChange);
 
-  // JS 错误:同步异常 + 未处理的 Promise 拒绝
-  window.addEventListener("error", (e) => reportError(e.message, e.error));
-  window.addEventListener("unhandledrejection", (e) =>
-    reportError(e.reason?.message ?? String(e.reason), e.reason)
-  );
-
-  // web-vitals 动态 import:独立 chunk,不进首包(主包体积纪律)
-  import("web-vitals").then(({ onLCP, onINP, onCLS, onFCP, onTTFB }) => {
-    const report = (m) => track("webvital", m.name, Math.round(m.value), { rating: m.rating });
-    onLCP(report);
-    onINP(report);
-    onCLS(report);
-    onFCP(report);
-    onTTFB(report);
-  });
+  if (RUM_ENABLED) {
+    // RUM 原生采集错误/LongTask/Web Vitals,自建的这三类停发(避免双份)
+    import("@datadog/browser-rum").then(({ datadogRum }) => {
+      datadogRum.init({
+        applicationId: RUM_CONFIG.applicationId,
+        clientToken: RUM_CONFIG.clientToken,
+        site: RUM_CONFIG.site,
+        service: "pokemon-dex-ai",
+        env: RUM_CONFIG.env,
+        sessionSampleRate: RUM_CONFIG.sessionSampleRate,
+        sessionReplaySampleRate: 0, // 游戏站不需要回放,省会话配额
+        trackLongTasks: true,
+        trackUserInteractions: true,
+      });
+      datadogRum.startView({ name: window.location.hash || "#/home" });
+      rumReady = true;
+    });
+  } else {
+    // 自建兜底:JS 错误(同步异常 + 未处理拒绝)+ web-vitals 独立 chunk
+    window.addEventListener("error", (e) => reportError(e.message, e.error));
+    window.addEventListener("unhandledrejection", (e) =>
+      reportError(e.reason?.message ?? String(e.reason), e.reason)
+    );
+    import("web-vitals").then(({ onLCP, onINP, onCLS, onFCP, onTTFB }) => {
+      const report = (m) => track("webvital", m.name, Math.round(m.value), { rating: m.rating });
+      onLCP(report);
+      onINP(report);
+      onCLS(report);
+      onFCP(report);
+      onTTFB(report);
+    });
+  }
 
   setInterval(flush, FLUSH_INTERVAL_MS);
   window.addEventListener("pagehide", () => flush(true));

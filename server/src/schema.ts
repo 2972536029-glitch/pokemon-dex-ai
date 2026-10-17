@@ -207,8 +207,8 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS idx_feedback_ident ON feedback (ident, context, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
 
--- v2.4:管理员标记(数据看板准入)。生产测试号 123456 幂等回填升管理员;
--- 运维性 UPDATE 放进迁移段,新库冷启动即生效,无需手工 psql。
+-- 运维保留位:is_admin 目前无运行时消费者(看板已迁 Datadog),列留在库里
+-- 供未来管理功能使用;生产测试号 123456 幂等回填,新库冷启动即生效。
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
 UPDATE users SET is_admin = true WHERE username = '123456' AND is_admin = false;
 `;

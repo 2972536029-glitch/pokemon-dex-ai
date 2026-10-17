@@ -12,6 +12,7 @@
     "seed": "tsx db/seed-cards.ts"
   },
   "dependencies": {
+    "@datadog/browser-rum": "^7.16.0",
     "express": "^5.1.0",
     "pg": "^8.23.0",
     "react": "^19.2.0",

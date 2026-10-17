@@ -9,6 +9,8 @@ export default defineConfig({
       output: {
         // react 全家桶拆 vendor:业务代码改动不再打穿长缓存的基础包
         manualChunks(id) {
+          // Datadog RUM 是观测动态 import 的:单独拆异步 chunk,不进首包
+          if (id.includes("@datadog")) return "datadog";
           // web-vitals 是遥测动态 import 的:单独拆异步 chunk,
           // 不进首屏必载的 vendor(首包体积纪律)
           if (id.includes("web-vitals")) return "webvitals";

@@ -1,8 +1,7 @@
-// v2.4 可观测性 E2E:telemetry 批量采集、feedback 20h upsert、metrics 聚合、
-// 管理员准入(401/403/200 三态)。Run: node qa/telemetry-e2e.mjs
+// v2.5 可观测性 E2E:telemetry 批量采集、feedback 20h upsert、每日指标推送
+// 端点(/api/metrics/flush)鉴权与聚合。Run: node qa/telemetry-e2e.mjs
 // 前置:本地 Postgres(docker compose up -d)+ server(npm run dev:ai)。
 // 自 suffix 用户名 → 可在持久库上重复执行。
-import { execSync } from "node:child_process";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:5178";
 const SUFFIX = Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 1296).toString(36).padStart(2, "0");
@@ -12,8 +11,8 @@ let pass = 0;
 let fail = 0;
 let jar = "";
 
-async function req(method, path, { body, auth = false } = {}) {
-  const headers = {};
+async function req(method, path, { body, auth = false, headers: extra = {} } = {}) {
+  const headers = { ...extra };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (auth && jar) headers.cookie = jar;
   const res = await fetch(BASE + path, {
@@ -105,62 +104,39 @@ r = await req("POST", "/api/telemetry", {
   body: { ...ids, events: [ev("usage", "battle_win"), ev("webvital", "INP", 88, { rating: "good" })] },
 });
 check("C2 登录态上报 204", r.status === 204, r.text);
+// ---- D: 每日指标推送端点(Vercel Cron 调用面) ----
+r = await req("GET", "/api/metrics/flush");
+check("D1 无钥匙 403", r.status === 403, r.text);
 
-// ---- D: 看板准入三态 ----
-r = await req("GET", "/api/metrics/overview?days=7");
-check("D1 匿名 401", r.status === 401, r.text);
+r = await req("GET", "/api/metrics/flush", { headers: { authorization: "Bearer wrong-secret" } });
+check("D2 错误 Bearer 403", r.status === 403, r.text);
 
-r = await req("GET", "/api/metrics/overview?days=7", { auth: true });
-check("D2 非管理员 403", r.status === 403 && r.json?.error === "forbidden", r.text);
-
-// SQL 升管理员(仅本地 Docker;生产走 schema 内的 123456 回填)
+// 本地无 CRON_SECRET:回落 x-seed-key(与 /api/admin/seed 同款运维钥匙)
+const fs = await import("node:fs");
+let seedKey = "";
 try {
-  execSync(
-    `docker compose exec -T db psql -U dex -d pokemon_dex -c "UPDATE users SET is_admin = true WHERE username = '${U1}'"`,
-    { stdio: "pipe" }
-  );
-} catch (e) {
-  console.log("SKIP | D3 前置:docker psql 不可用,后续看板断言无法执行");
-  console.log(`\n${pass} passed, ${fail} failed (skipped dashboard section)`);
-  process.exit(fail > 0 ? 1 : 0);
+  const envText = fs.readFileSync(new URL("../.env.local", import.meta.url), "utf8");
+  for (const line of envText.split("\n")) {
+    const m = line.match(/^GLM_API_KEY=(.+?)\s*$/);
+    if (m) seedKey = m[1];
+  }
+} catch {}
+
+if (!seedKey) {
+  console.log("SKIP | D3+ 本地无 GLM_API_KEY,flush 聚合断言无法执行");
+} else {
+  r = await req("GET", "/api/metrics/flush", { headers: { "x-seed-key": seedKey } });
+  check("D3 钥匙通过 200", r.status === 200, r.text.slice(0, 200));
+  const fl = r.json;
+  const byName = Object.fromEntries((fl.metrics ?? []).map((m) => [m.metric, m.value]));
+  check("D4 响应是 JSON 聚合(非 SPA fallback)", Boolean(fl) && Array.isArray(fl.metrics) && fl.window === "24h", r.text.slice(0, 120));
+  check("D5 核心指标齐全", ["pokemon.dau", "pokemon.api.requests", "pokemon.api.errors", "pokemon.api.p95_ms", "pokemon.feedback.avg_score", "pokemon.feedback.count"].every((k) => k in byName), JSON.stringify(byName));
+  check("D6 业务指标齐全(pull_ten/battle_win)", "pokemon.usage.pull_ten" in byName && "pokemon.usage.battle_win" in byName, JSON.stringify(byName));
+  check("D7 API 请求 ≥ 1(计时中间件生效)", Number(byName["pokemon.api.requests"]) >= 1, byName["pokemon.api.requests"]);
+  check("D8 反馈均分 ∈ [1,5] 且条数 ≥ 2", Number(byName["pokemon.feedback.avg_score"]) >= 1 && Number(byName["pokemon.feedback.avg_score"]) <= 5 && Number(byName["pokemon.feedback.count"]) >= 2, JSON.stringify(byName));
+  check("D9 DAU ≥ 1", Number(byName["pokemon.dau"]) >= 1, byName["pokemon.dau"]);
+  check("D10 Datadog 推送结果为布尔(本地缺 key 应 false)", typeof fl.dd?.pushed === "boolean", JSON.stringify(fl.dd));
 }
-
-r = await req("GET", "/api/metrics/overview?days=7", { auth: true });
-check("D3 管理员 200", r.status === 200, r.text);
-
-const ov = r.json;
-check("D4 响应是 JSON 聚合(非 SPA fallback)", ov && typeof ov === "object" && Array.isArray(ov.api?.daily), r.text.slice(0, 120));
-check("D5 API 日报有数据(计时中间件生效)", ov.api.daily.length >= 1 && ov.api.total >= 1, JSON.stringify(ov.api.daily));
-check("D6 端点聚合含 telemetry 之外的真实路由", Array.isArray(ov.api.endpoints) && ov.api.endpoints.some((e) => String(e.endpoint).startsWith("/api/")), JSON.stringify(ov.api.endpoints));
-check("D7 vitals 含 LCP", (ov.vitals ?? []).some((v) => v.name === "LCP" && Number(v.samples) >= 1), JSON.stringify(ov.vitals));
-check("D8 usage 含 pull_ten 与 battle_win", (ov.usage ?? []).some((u) => u.action === "pull_ten") && (ov.usage ?? []).some((u) => u.action === "battle_win"), JSON.stringify(ov.usage));
-check("D9 jserror 进错误 Top", (ov.errors.top ?? []).some((e) => e.message.includes("qa intentionally broken")), JSON.stringify(ov.errors.top));
-check("D10 crash-free 口径字段存在", typeof ov.errors.sessionsTotal === "number" && typeof ov.errors.sessionsErrored === "number", JSON.stringify(ov.errors));
-// 聚合是 7 天窗口、库是持久库(套件可重复执行),绝对计数会被历史 run 抬高——
-// 只做结构性断言;本轮 upsert 的正确性由 F1/F2 的 updated 标志 + D12 首条边际证明
-const distSum = Object.values(ov.feedback.dist ?? {}).reduce((s, n) => s + Number(n), 0);
-check(
-  "D11 反馈聚合结构自洽(计数=分布和,均分∈[1,5])",
-  ov.feedback.responses >= 2 &&
-    distSum === ov.feedback.responses &&
-    Number(ov.feedback.avg) >= 1 &&
-    Number(ov.feedback.avg) <= 5,
-  JSON.stringify(ov.feedback)
-);
-const top = ov.feedback.recent?.[0];
-check(
-  "D12 本轮改口在 recent 首条(battle→2 分)",
-  top?.context === "battle" && Number(top?.score) === 2 && top?.comment === "其实一般",
-  JSON.stringify(ov.feedback.recent)
-);
-check("D13 DAU ≥ 1", (ov.audience.daily ?? []).some((d) => Number(d.dau) >= 1), JSON.stringify(ov.audience.daily));
-check("D14 注册计数 ≥ 1", Number(ov.audience.registrations) >= 1, ov.audience.registrations);
-
-r = await req("GET", "/api/metrics/overview?days=30", { auth: true });
-check("D15 days=30 合法", r.status === 200 && r.json?.days === 30, r.text.slice(0, 120));
-
-r = await req("GET", "/api/metrics/overview?days=hack", { auth: true });
-check("D16 非法 days 回退 7", r.status === 200 && r.json?.days === 7, r.text.slice(0, 120));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

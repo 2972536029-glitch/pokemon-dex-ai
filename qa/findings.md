@@ -179,6 +179,15 @@
 - **回归**:六路由(home/packs/metrics/battle/friends/collection)390px 巡检全 OK;桌面 1280px 回归(KPI 4 列 / grid 2 列,媒体查询未泄漏)OK。
 - **状态**:已修复并纳入巡检基线
 
+## v2.5 观测展示面迁移 Datadog(2026-10-17,docs/updates/v2.5-datadog.md)
+用户决策:看板不放产品站里。自建管线收窄为业务数据源(CSAT 落库 + 行为埋点),Web Vitals/JS 错误/视图归 Datadog RUM(env 门控,缺 token 自动降级自建兜底),业务 KPI 由 Vercel Cron 每日经 /api/metrics/flush 推 Datadog HTTP API(24h 滚动窗口,pokemon.* 指标族)。站内 #/metrics 页面/路由/requireAdmin/is_admin 代码路径/mtr 样式全删(schema 列保留为运维保留位)。密钥纪律:DD_API_KEY/CRON_SECRET 只进 Vercel Secrets,管道直读本地课程密钥文件,零回显零落盘。
+
+### 过程抓到的坑
+1. **SPA fallback 假绿两次复现**:本地 server 用 `tsx`(非 watch)启动,改代码后旧进程仍在服务,新端点 /api/metrics/flush 被包成 200 HTML——套件「先 text 后 JSON」防线全部拦下,但这暴露了"改完代码必须重启 server"是隐性前置,考虑给 dev:ai 换 tsx watch。
+2. **套件脚手架盲区**:req() 辅助函数只解构 { body, auth },调用方传 headers 静默被丢——钥匙从未发出导致 403,排查绕了一圈才回到脚手架。教训:测试脚手架的参数面也要按接口对待,多传的参数应该显式忽略或报错。
+3. v23 套件出现过一次 FAIL,连续两轮全量重跑未复现(24/24),记录为观察项。
+- 状态:本地验收通过;Datadog 侧验证待 RUM 应用创建后补记
+
 ## v2.4 可观测性(2026-10-17,docs/updates/v2.4-observability.md)
 自建 RUM(事件宽表 telemetry_events:webvital/jserror/usage/pageview/api)+ CSAT 满意度反馈(feedback 表,20h upsert)+ 管理员 KPI 看板(#/metrics,requireAdmin + users.is_admin)。选型自建而非 SaaS:零第三方账号、零数据出站,采样/限流/聚合可控可讲。新增 qa/telemetry-e2e.mjs 29 断言,全量回归五套件 149 断言绿(e2e 36 + friends 43 + v23 24 + engine 17 + telemetry 29)。过程抓到的 bug 与断言修正:
 1. **计时中间件顺序**:res.on("finish") 钩子必须先于业务路由注册,放路由之后=永远采不到——Express 中间件顺序即生效顺序。

@@ -9,7 +9,6 @@ const LoginView = lazy(() => import("./views/LoginView.jsx"));
 const BattleView = lazy(() => import("./views/BattleView.jsx"));
 const FriendsView = lazy(() => import("./views/FriendsView.jsx"));
 const WikiView = lazy(() => import("./views/WikiView.jsx"));
-const MetricsView = lazy(() => import("./views/MetricsView.jsx"));
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
 import { useTheme } from "./hooks/useTheme.js";
@@ -100,8 +99,6 @@ function Header({ route, go, pending }) {
           {link("#/friends", "好友")}
           {pending > 0 && <span className="nav-badge" aria-label={`待处理 ${pending} 项`}>{pending}</span>}
         </span>
-        {/* v2.4:数据看板仅对管理员可见(后端仍有 403 兜底,这里只是入口显隐) */}
-        {me?.is_admin && link("#/metrics", "看板")}
       </nav>
       <div className="topbar-user">
         {me ? (
@@ -136,7 +133,6 @@ const TITLES = {
   "#/battle": "对战",
   "#/friends": "好友",
   "#/login": "登录",
-  "#/metrics": "数据看板",
 };
 
 const Shell = () => {
@@ -175,7 +171,6 @@ const Shell = () => {
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
   else if (route === "#/friends") view = <FriendsView />;
-  else if (route === "#/metrics") view = <MetricsView />;
   else view = <DexView onContextChange={setDexContext} />;
 
   return (
