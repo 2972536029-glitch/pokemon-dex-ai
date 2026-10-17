@@ -163,6 +163,8 @@ export function mountBattle(): express.Router {
       } catch (err: any) {
         console.warn("[battle] opening reasoned intent fell back to rules:", err?.message);
         state.aiIntent = generateAiIntent(state, intentRng);
+        // 回退也要有理由行:CI/mock 环境无模型,战斗照常但日志如实说明
+        state.aiIntent.reason = "模型暂时不可用,本轮使用规则策略";
       }
     } else {
       state.aiIntent = generateAiIntent(state, intentRng);
@@ -297,6 +299,7 @@ export function mountBattle(): express.Router {
         } catch (err: any) {
           console.warn("[battle] reasoned intent fell back to mixed strategy:", err?.message);
           state.aiIntent = generateAiIntent(state, rng);
+          state.aiIntent.reason = "模型暂时不可用,本轮使用规则策略";
         }
       } else {
         state.aiIntent = generateAiIntent(state, rng);

@@ -222,4 +222,5 @@
 2. **reasoned 开局意图忘挂 reason**:理由改为"执行时入日志"后,start 分支没把 reason 存进 intent——R2/R3 两轮定位到。教训:改数据流时列出全部写入点逐个核对。
 3. **modulePreload.resolveDependencies 首参是文件名**:(deps)=>deps.filter 直接炸 build——签名是 (filename, deps)。
 4. R3 断言更新:v3 AI 行动可为 move/guard/switch(不再是必然出招),配对断言同步扩展。
+5. **CI 首跑红(本地绿)**:无 GLM key 的环境(CI/mock)reasoned 战斗走回退,回退路径没有 reason 行 → R2 挂。本地一直绿是因为 .env.local 的 key 仍被注入(MOCK_LLM 只影响 isMock 展示,不等于 key 缺席)。修法:回退路径也写 reason("模型暂时不可用,本轮使用规则策略")。教训:**mock 与"无凭证"是两个环境**,CI 矩阵里必须有无 key 一档;本地复现 CI 要把 key 显式置空(loadEnvFile 按"变量存在"判断,不覆盖已定义的空值)。
 - 验证:五套件 164 断言全绿;跨站 POST 403/无 Origin 放行/代理 200/浏览器 CSP 零违规实测通过
