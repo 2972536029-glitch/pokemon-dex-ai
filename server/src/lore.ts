@@ -26,7 +26,8 @@ interface PokemonStats {
 }
 
 async function fetchJson(url: string): Promise<any> {
-  const r = await fetch(url);
+  // v3.1(审计 P1-6):外呼必须有独立预算,上游半死不活时不允许拖着函数烧钱
+  const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

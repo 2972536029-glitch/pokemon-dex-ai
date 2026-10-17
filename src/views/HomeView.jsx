@@ -50,7 +50,7 @@ export default function HomeView({ go }) {
   useEffect(() => {
     let cancelled = false;
     const id = dailyId();
-    fetch(`https://pokeapi.co/api/v2/pokemon/${id}`)
+    fetch(`/api/poke/pokemon/${id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => {
         if (cancelled) return;

@@ -26,6 +26,8 @@ import {
 } from "./battle.js";
 
 const FRIEND_CAP = 50;
+/** 发出中申请上限(防全站 inbox 轰炸,trades/challenges 同款纪律) */
+const PENDING_OUT_CAP = 10;
 const PENDING_TRADES_CAP = 10;
 const PENDING_CHALLENGES_CAP = 10;
 /** PvP rewards settle for at most this many finished battles per day (anti-farm). */
@@ -48,21 +50,26 @@ export function mountFriends(): express.Router {
 
   const pair = (a: number, b: number) => [Math.min(a, b), Math.max(a, b)] as const;
 
-  async function areFriends(a: number, b: number): Promise<boolean> {
+  /** 池或事务客户端皆可执行(v3.1 审计 P1-1):事务内必须传 client——经 q() 再从
+   *  池里取第二条连接,池满时互相等待 = 全池死锁,请求悬挂到函数超时被强杀。 */
+  type DbLike = { query: (text: string, values?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }> };
+  const poolLike = { query: (text: string, values?: unknown[]) => q(text, values as unknown[]) } as DbLike;
+
+  async function areFriends(a: number, b: number, db: DbLike = poolLike): Promise<boolean> {
     const [x, y] = pair(a, b);
-    const { rowCount } = await q(`SELECT 1 FROM friendships WHERE user_a = $1 AND user_b = $2`, [x, y]);
+    const { rowCount } = await db.query(`SELECT 1 FROM friendships WHERE user_a = $1 AND user_b = $2`, [x, y]);
     return (rowCount ?? 0) > 0;
   }
 
-  async function friendCount(uid: number): Promise<number> {
-    const { rows } = await q<{ n: string }>(
+  async function friendCount(uid: number, db: DbLike = poolLike): Promise<number> {
+    const { rows } = await db.query(
       `SELECT COUNT(*) AS n FROM friendships WHERE user_a = $1 OR user_b = $1`, [uid]);
-    return Number(rows[0].n);
+    return Number((rows[0] as { n: string }).n);
   }
 
-  async function usernameOf(uid: number): Promise<string> {
-    const { rows } = await q<{ username: string }>(`SELECT username FROM users WHERE id = $1`, [uid]);
-    return rows[0]?.username ?? `#${uid}`;
+  async function usernameOf(uid: number, db: DbLike = poolLike): Promise<string> {
+    const { rows } = await db.query(`SELECT username FROM users WHERE id = $1`, [uid]);
+    return (rows[0] as { username: string })?.username ?? `#${uid}`;
   }
 
   /** Validate "3 distinct positive ints" and return them. */
@@ -75,8 +82,8 @@ export function mountFriends(): express.Router {
   }
 
   /** Every card in ids must exist in the catalog and be owned by uid. */
-  async function assertOwnedCards(uid: number, ids: number[]): Promise<void> {
-    const { rowCount } = await q(
+  async function assertOwnedCards(uid: number, ids: number[], db: DbLike = poolLike): Promise<void> {
+    const { rowCount } = await db.query(
       `SELECT 1 FROM user_cards uc JOIN cards c ON c.id = uc.card_id
        WHERE uc.user_id = $1 AND uc.count >= 1 AND c.id = ANY($2)`,
       [uid, ids]);
@@ -84,8 +91,8 @@ export function mountFriends(): express.Router {
   }
 
   /** True if uid's saved battle team contains cardId (card_ids is integer[]). */
-  async function inBattleTeam(uid: number, cardId: number): Promise<boolean> {
-    const { rowCount } = await q(
+  async function inBattleTeam(uid: number, cardId: number, db: DbLike = poolLike): Promise<boolean> {
+    const { rowCount } = await db.query(
       `SELECT 1 FROM user_teams WHERE user_id = $1 AND $2 = ANY(card_ids)`,
       [uid, cardId]);
     return (rowCount ?? 0) > 0;
@@ -103,6 +110,12 @@ export function mountFriends(): express.Router {
     if (!target) throw new HttpError(404, "用户不存在");
     if (target.id === me.id) bad("不能添加自己为好友");
     if (await areFriends(me.id, target.id)) throw new HttpError(409, "你们已经是好友了");
+    // v3.1(审计 P2-8):发出中的申请有上限,自己好友数也先查——否则可以对
+    // 全站每个用户名发申请,做陌生人 inbox 轰炸(trades/challenges 早有 cap,这里补齐)
+    const { rows: outgoing } = await q<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM friend_requests WHERE from_uid = $1 AND status = 1`, [me.id]);
+    if (Number(outgoing[0].n) >= PENDING_OUT_CAP) throw new HttpError(409, `发出中的申请最多 ${PENDING_OUT_CAP} 条,先等对方处理`);
+    if ((await friendCount(me.id)) >= FRIEND_CAP) throw new HttpError(409, `好友最多 ${FRIEND_CAP} 人`);
 
     // Reverse pending request → mutual consent, befriend immediately.
     const { rows: reverse } = await q<{ id: number }>(
@@ -136,26 +149,29 @@ export function mountFriends(): express.Router {
 
   router.get("/api/friends", wrap("friends", "好友服务出了点问题,请稍后再试", async (req, res) => {
     const me = await requireUser(req);
+    // v3.1:三个互不依赖的查询并行(此前串行三连往返,审计 P2-10)
     // BIGSERIAL ids arrive as strings — hand the client numbers
-    const friends = (await q<{ id: number; username: string; since: string }>(
-      `SELECT u.id, u.username, f.created_at AS since
-       FROM friendships f
-       JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
-       WHERE f.user_a = $1 OR f.user_b = $1
-       ORDER BY f.created_at DESC`, [me.id])).rows
-      .map((f) => ({ ...f, id: Number(f.id) }));
-    const incoming = (await q<{ id: number; from_uid: number; username: string; created_at: string }>(
-      `SELECT r.id, r.from_uid, u.username, r.created_at
-       FROM friend_requests r JOIN users u ON u.id = r.from_uid
-       WHERE r.to_uid = $1 AND r.status = $2 ORDER BY r.created_at DESC`,
-      [me.id, FRIEND_REQ_STATUS.PENDING])).rows
-      .map((r) => ({ ...r, id: Number(r.id), from_uid: Number(r.from_uid) }));
-    const outgoing = (await q<{ id: number; to_uid: number; username: string; created_at: string }>(
-      `SELECT r.id, r.to_uid, u.username, r.created_at
-       FROM friend_requests r JOIN users u ON u.id = r.to_uid
-       WHERE r.from_uid = $1 AND r.status = $2 ORDER BY r.created_at DESC`,
-      [me.id, FRIEND_REQ_STATUS.PENDING])).rows
-      .map((r) => ({ ...r, id: Number(r.id), to_uid: Number(r.to_uid) }));
+    const [friendsR, incomingR, outgoingR] = await Promise.all([
+      q<{ id: number; username: string; since: string }>(
+        `SELECT u.id, u.username, f.created_at AS since
+         FROM friendships f
+         JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
+         WHERE f.user_a = $1 OR f.user_b = $1
+         ORDER BY f.created_at DESC`, [me.id]),
+      q<{ id: number; from_uid: number; username: string; created_at: string }>(
+        `SELECT r.id, r.from_uid, u.username, r.created_at
+         FROM friend_requests r JOIN users u ON u.id = r.from_uid
+         WHERE r.to_uid = $1 AND r.status = $2 ORDER BY r.created_at DESC`,
+        [me.id, FRIEND_REQ_STATUS.PENDING]),
+      q<{ id: number; to_uid: number; username: string; created_at: string }>(
+        `SELECT r.id, r.to_uid, u.username, r.created_at
+         FROM friend_requests r JOIN users u ON u.id = r.to_uid
+         WHERE r.from_uid = $1 AND r.status = $2 ORDER BY r.created_at DESC`,
+        [me.id, FRIEND_REQ_STATUS.PENDING]),
+    ]);
+    const friends = friendsR.rows.map((f) => ({ ...f, id: Number(f.id) }));
+    const incoming = incomingR.rows.map((r) => ({ ...r, id: Number(r.id), from_uid: Number(r.from_uid) }));
+    const outgoing = outgoingR.rows.map((r) => ({ ...r, id: Number(r.id), to_uid: Number(r.to_uid) }));
     res.json({ friends, incoming, outgoing });
   }));
 
@@ -169,8 +185,8 @@ export function mountFriends(): express.Router {
       const reqRow = rows[0];
       // to_uid is checked here (not just in SQL) so a foreign id reads as "not found"
       if (!reqRow || reqRow.to_uid !== me.id) throw new HttpError(404, "申请不存在");
-      if ((await friendCount(me.id)) >= FRIEND_CAP) throw new HttpError(409, `好友最多 ${FRIEND_CAP} 人`);
-      if ((await friendCount(reqRow.from_uid)) >= FRIEND_CAP) throw new HttpError(409, "对方好友已达上限");
+      if ((await friendCount(me.id, client)) >= FRIEND_CAP) throw new HttpError(409, `好友最多 ${FRIEND_CAP} 人`);
+      if ((await friendCount(reqRow.from_uid, client)) >= FRIEND_CAP) throw new HttpError(409, "对方好友已达上限");
       const [x, y] = pair(reqRow.from_uid, reqRow.to_uid);
       await client.query(
         `INSERT INTO friendships (user_a, user_b) VALUES ($1, $2)
@@ -307,13 +323,13 @@ export function mountFriends(): express.Router {
       // kind=1 gift: from → to.  kind=2 ask: to → from (target gives on accept).
       const giver = trade.kind === TRADE_KIND.GIFT ? trade.from_uid : trade.to_uid;
       const receiver = trade.kind === TRADE_KIND.GIFT ? trade.to_uid : trade.from_uid;
-      if (!(await areFriends(giver, receiver))) throw new HttpError(403, "你们已不是好友,交易取消");
+      if (!(await areFriends(giver, receiver, client))) throw new HttpError(403, "你们已不是好友,交易取消");
 
       const { rows: hold } = await client.query<{ count: number }>(
         `SELECT count FROM user_cards WHERE user_id = $1 AND card_id = $2 FOR UPDATE`,
         [giver, trade.card_id]);
       if (!hold[0] || hold[0].count < 1) throw new HttpError(409, "发起方已经没有这张卡了,交易失效");
-      if (hold[0].count === 1 && (await inBattleTeam(giver, trade.card_id))) {
+      if (hold[0].count === 1 && (await inBattleTeam(giver, trade.card_id, client))) {
         throw new HttpError(409, "这张卡是持有方唯一一张且在出战编队里,无法交割");
       }
       const newCount = hold[0].count - 1;
@@ -445,9 +461,9 @@ export function mountFriends(): express.Router {
       const battle = rows[0];
       if (!battle || battle.target_uid !== me.id) throw new HttpError(404, "战书不存在");
       if (battle.status !== FBATTLE_STATUS.PENDING) throw new HttpError(409, "这封战书已被处理");
-      if (!(await areFriends(battle.challenger_uid, me.id))) throw new HttpError(403, "你们已不是好友");
+      if (!(await areFriends(battle.challenger_uid, me.id, client))) throw new HttpError(403, "你们已不是好友");
       // Challenger's cards may have been gifted away since the challenge — re-verify.
-      await assertOwnedCards(battle.challenger_uid, battle.challenger_team);
+      await assertOwnedCards(battle.challenger_uid, battle.challenger_team, client);
 
       const loadCards = async (cardIds: number[]) => {
         const r = await client.query<any>(
@@ -481,10 +497,10 @@ export function mountFriends(): express.Router {
       const winnerUid = winner === "challenger" ? battle.challenger_uid : winner === "target" ? battle.target_uid : null;
       const loserUid = winner === "challenger" ? battle.target_uid : winner === "target" ? battle.challenger_uid : null;
       if (winnerUid && (await rewardable(winnerUid))) {
-        await pay(winnerUid, REWARD_WIN, `好友对战:胜 ${(await usernameOf(loserUid!))}`);
+        await pay(winnerUid, REWARD_WIN, `好友对战:胜 ${(await usernameOf(loserUid!, client))}`);
       }
       if (loserUid && (await rewardable(loserUid))) {
-        await pay(loserUid, REWARD_LOSE, `好友对战:负 ${(await usernameOf(winnerUid!))}`);
+        await pay(loserUid, REWARD_LOSE, `好友对战:负 ${(await usernameOf(winnerUid!, client))}`);
       }
       if (!winnerUid) {
         for (const uid of [battle.challenger_uid, battle.target_uid]) {

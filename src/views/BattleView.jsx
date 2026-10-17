@@ -81,6 +81,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [draftIds, setDraftIds] = useState([]); // 编辑器中的临时编队
   const [savingTeam, setSavingTeam] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false); // v3.1:初始加载失败态
   // 最近一次行动:失败重试按钮用(ref 避免重渲染依赖)
   const lastActionRef = useRef(null);
   // playEvents 哨兵用:始终指向最新 battleId(闭包里的 battle 会过期)
@@ -119,8 +120,41 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
           setResumed(true);
         }
       })
-      .catch(() => setError("加载战斗数据失败"));
+      .catch(() => {
+        setTeamIds([]);
+        setLoadFailed(true);
+      });
   }, [me]);
+
+  // v3.1:初始加载失败的可重试入口(此前失败 = 永久"加载中…",审计 P0-2)
+  const retryLoad = () => {
+    setLoadFailed(false);
+    setTeamIds(null);
+    (async () => {
+      try {
+        const [tRes, aRes, cRes, hRes] = await Promise.all([
+          fetch("/api/battle/team"), fetch("/api/battle/active"),
+          fetch("/api/collection"), fetch("/api/battle/history"),
+        ]);
+        const hBody = await hRes.json().catch(() => null);
+        if (hBody && typeof hBody.wins === "number") setHistory(hBody);
+        const tBody = await tRes.json();
+        const aBody = await aRes.json();
+        const cBody = await cRes.json();
+        setTeamIds(tBody.cardIds ?? []);
+        setAllCards(cBody.cards ?? []);
+        const ids = new Set(tBody.cardIds ?? []);
+        setTeamMons((cBody.cards ?? []).filter((c) => ids.has(c.id)));
+        if (aBody.battleId && aBody.state?.status === "active") {
+          setBattle(aBody);
+          setResumed(true);
+        }
+      } catch {
+        setTeamIds([]);
+        setLoadFailed(true);
+      }
+    })();
+  };
 
   async function saveTeamFromEditor() {
     if (savingTeam) return;
@@ -140,6 +174,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
       setTeamIds(draftIds);
       setTeamMons(allCards.filter((c) => draftIds.includes(c.id)));
       setEditorOpen(false);
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setSavingTeam(false);
     }
@@ -172,6 +208,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         return;
       }
       setBattle({ battleId: body.battleId, state: body.state });
+    } catch {
+      setError("网络异常,请重试");
     } finally {
       setBusy(false);
     }
@@ -236,6 +274,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
       setError("网络异常,请重试");
     } finally {
       setBusy(false);
+      setPlaying(false); // v3.1 修复:失败路径不复位 = 整个战斗 UI 永久锁死
     }
   }
 
@@ -521,6 +560,13 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
         </div>
         {teamIds === null ? (
           <p className="hint center">加载中…</p>
+        ) : loadFailed ? (
+          <div className="card-box center">
+            <p>战斗数据加载失败。</p>
+            <button type="button" className="btn-primary" onClick={retryLoad}>
+              重试
+            </button>
+          </div>
         ) : teamIds.length === 3 ? (
           <>
             <div className="pregame-squad">

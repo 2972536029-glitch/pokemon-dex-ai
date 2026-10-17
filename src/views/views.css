@@ -3868,3 +3868,51 @@ body::before, body::after { transform: translateZ(0); }
   .intent-hint { font-size: 12px; }
 }
 
+
+/* v3.1:会话过期引导 toast(api-unauthorized 广播的接收端) */
+.session-toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  animation: intent-pop 0.3s var(--ease-spring);
+}
+:root:not([data-theme="dark"]) .session-toast {
+  background: var(--bg-card);
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+/* v3.1:静态法务页(隐私政策 / 服务条款) */
+.legal-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 4px 40px;
+}
+.legal-page h2 {
+  font-size: 20px;
+  margin: 26px 0 10px;
+}
+.legal-page p,
+.legal-page li {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+.legal-page ul {
+  padding-left: 20px;
+}
+.legal-updated {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 18px;
+}

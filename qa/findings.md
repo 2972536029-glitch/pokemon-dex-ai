@@ -203,7 +203,8 @@
 - 引擎 34 断言(旧 17 全保留 + v3 新 17:四档派生/能量结算/迅招先手/防御减半(10 种子统计)/降档/意图生命周期/确定性/全队判胜)
 - e2e 40/40(新增 V5b/c、V9b/c:v3 字段、下回合意图、guard 行动);五套件合计 **164 断言全绿**
 - 浏览器实测:意图气泡/提示行/费用徽章/防御按钮/双侧能量条/回放弹跳全部就位;AI 混合策略可见多样性(实测第二轮 AI 自选防御蓄力);390px 无溢出
-- 状态:本地验收通过
+- 生产:部署 Ready(nu5wqg01l);生产浏览器 smoke 因本机到 vercel.app 网络中断暂缓(与 v2.3 同款已知问题,恢复后补做)
+- 状态:验收通过(生产 smoke 待网络恢复补做一项)
 
 ## v2.4 可观测性(2026-10-17,docs/updates/v2.4-observability.md)
 自建 RUM(事件宽表 telemetry_events:webvital/jserror/usage/pageview/api)+ CSAT 满意度反馈(feedback 表,20h upsert)+ 管理员 KPI 看板(#/metrics,requireAdmin + users.is_admin)。选型自建而非 SaaS:零第三方账号、零数据出站,采样/限流/聚合可控可讲。新增 qa/telemetry-e2e.mjs 29 断言,全量回归五套件 149 断言绿(e2e 36 + friends 43 + v23 24 + engine 17 + telemetry 29)。过程抓到的 bug 与断言修正:
@@ -212,3 +213,13 @@
 3. **断言两修**(钉死真实契约):脏 anonId 的契约是"消毒降级为匿名"而非拒收(ingest 对元数据宽容、对载荷严格);持久库上看板聚合是 7 天窗口累计,绝对计数断言换结构性断言+边际证明(QA-037 假绿教训的延伸)。
 4. QA-040:390px 溢出(grid min-width:auto 教训:媒体查询管轨道,管不住内容最小宽)。
 - 状态:本地验收通过,生产部署与 smoke 见 v2.4 文档
+
+## v3.1 生产级加固(2026-10-17,docs/updates/v3.1-production-hardening.md)
+用户决策:"到不了商业级别,做全量调研和修改"。三路调研/审计(标准调研+服务端逐行+前端逐行)→ 30 项落地:DB TLS 校验、PvE 奖励 24h cap+限流、并发 start 部分唯一索引、Origin CSRF 纵深、CSP+HSTS、immutable 缓存、池死锁(事务内 q() 全改 client)、外呼超时、保底判定入锁、health 503、fallback 跳过 /api、申请 cap、BattleView 三死路、系统字体、datadog preload 过滤、根边界、会话过期引导、PokeAPI 服务端代理(中国可用性)、GitHub Actions CI(postgres service + 五套件)、法务页、request-id。
+
+### 过程抓到的坑
+1. **poolLike 类型谎言**:`const poolLike = q as DbLike` 把函数断言成带 .query 的对象——编译通过、运行即 `db.query is not a function`,抽卡/好友全 500。修法:`{ query: (t, v) => q(t, v) }` 包一层。教训:类型断言是"让编译器闭嘴",不是"让类型成立";as unknown as X 双重断言几乎总是谎言。
+2. **reasoned 开局意图忘挂 reason**:理由改为"执行时入日志"后,start 分支没把 reason 存进 intent——R2/R3 两轮定位到。教训:改数据流时列出全部写入点逐个核对。
+3. **modulePreload.resolveDependencies 首参是文件名**:(deps)=>deps.filter 直接炸 build——签名是 (filename, deps)。
+4. R3 断言更新:v3 AI 行动可为 move/guard/switch(不再是必然出招),配对断言同步扩展。
+- 验证:五套件 164 断言全绿;跨站 POST 403/无 Origin 放行/代理 200/浏览器 CSP 零违规实测通过

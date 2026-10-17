@@ -58,7 +58,13 @@ export function AuthProvider({ children }) {
   }, [refresh]);
 
   const logout = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    // 服务端会话销毁失败也先本地登出(cookie 过期后服务端会话自然失效);
+    // 静默失败会让用户"点了退出却还是登录态"且无任何提示(审计 P2-18)
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* 网络异常:本地态已清,服务端会话 7 天后自然过期 */
+    }
     setMe(null);
   }, []);
 

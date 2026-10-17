@@ -29,11 +29,13 @@ export default function WikiView({ param, go }) {
     setPoke(null);
     setError(null);
     setLore(null);
-    fetchJson(`https://pokeapi.co/api/v2/pokemon/${param}`)
+    fetchJson(`/api/poke/pokemon/${encodeURIComponent(param)}`)
       .then((d) => {
         if (cancelled) return;
-        const sp = d.species?.url;
-        fetchJson(sp)
+        // species.url 是上游全量 URL——取 id 走自家代理,不再直连
+        const speciesId = String(d.species?.url ?? "").split("/").filter(Boolean).pop();
+        if (!speciesId) throw new Error("no species url");
+        fetchJson(`/api/poke/pokemon-species/${encodeURIComponent(speciesId)}`)
           .then((species) => {
             if (cancelled) return;
             setPoke({
@@ -56,7 +58,7 @@ export default function WikiView({ param, go }) {
                   .slice(-1)[0]?.flavor_text?.replace(/\s+/g, " ") ?? null,
             });
           })
-          .catch(() => {});
+          .catch(() => { if (!cancelled) setError("图鉴数据加载失败,请重试"); });
       })
       .catch((e) => !cancelled && setError(e.message));
     return () => {
@@ -72,7 +74,7 @@ export default function WikiView({ param, go }) {
       .then((d) => {
         if (!cancelled) setLore(d);
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setError("图鉴数据加载失败,请重试"); });
     return () => {
       cancelled = true;
     };

@@ -189,13 +189,16 @@ export type Action =
 /** v3 adds guard to the action vocabulary (halve incoming + bank energy). */
 export type V3Action = Action | { kind: "guard" };
 
-/** v3: the telegraphed AI plan. label is UI-ready Chinese. */
+/** v3: the telegraphed AI plan. label is UI-ready Chinese; reason (reasoned
+ *  mode) rides WITH the intent and is logged when the intent EXECUTES —
+ *  理由与真实行动同回合配对,而不是生成时就提前一拍入日志。 */
 export interface Intent {
   kind: "move" | "guard" | "switch";
   moveId?: string;
   index?: number;
   tier?: Move["tier"];
   label: string;
+  reason?: string | null;
 }
 
 export interface TurnEvent {

@@ -96,6 +96,14 @@ export default function LoginView({ onDone }) {
         {mode === "register" && (
           <p className="hint">注册赠送 300 图鉴币,每日登录再领 50,用来抽卡包。</p>
         )}
+        {mode === "register" && (
+          <p className="hint">
+            注册即表示同意{" "}
+            <a href="#/terms" target="_blank" rel="noreferrer">服务条款</a>
+            {" "}与{" "}
+            <a href="#/privacy" target="_blank" rel="noreferrer">隐私政策</a>
+          </p>
+        )}
         {error && (
           <p className="form-error" role="alert">
             {error}

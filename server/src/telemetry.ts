@@ -160,6 +160,7 @@ async function pushDatadog(data: Datum[]): Promise<{ pushed: boolean; reason?: s
   const now = Math.floor(Date.now() / 1000);
   const res = await fetch(`https://${site}/api/v1/series`, {
     method: "POST",
+    signal: AbortSignal.timeout(10_000), // v3.1:外呼预算,不拖 cron
     headers: { "DD-API-KEY": apiKey, "content-type": "application/json" },
     body: JSON.stringify({
       series: data.map((d) => ({

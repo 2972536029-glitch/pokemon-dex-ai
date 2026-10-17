@@ -168,7 +168,7 @@ export async function drawCard(input: DrawInput): Promise<DrawResult> {
   //    double charge, pity update also rolls back) — we then serve the
   //    winner's card as a replay instead of a raw 500 (QA-004).
   try {
-    return await drawOnce(input, pack, rolled);
+    return await drawOnce(input, pack, rolled, Boolean(forceRarity));
   } catch (err: any) {
     if (err?.code === "23505") {
       const winner = await q<{ card_id: number }>(
@@ -199,10 +199,11 @@ function isUnlimited(input: { userId: number; username?: string }): boolean {
 async function drawOnce(
   input: DrawInput,
   pack: PackDef,
-  rolled: { id: number; rarity: "C" | "R" | "UR" }
+  rolled: { id: number; rarity: "C" | "R" | "UR" },
+  forced = false
 ): Promise<DrawResult> {
-  if (isUnlimited(input)) return drawOnceFree(input, pack, rolled);
-  return drawOnceCharged(input, pack, rolled);
+  if (isUnlimited(input)) return drawOnceFree(input, pack, rolled, forced);
+  return drawOnceCharged(input, pack, rolled, forced);
 }
 
 /** UR 出现时清零该包计数,否则 +1(两通道共用,事务内执行) */
@@ -217,22 +218,24 @@ async function bumpPity(client: any, userId: number, packId: string, rarity: "C"
 async function drawOnceFree(
   input: DrawInput,
   pack: PackDef,
-  rolled: { id: number; rarity: "C" | "R" | "UR" }
+  rolled: { id: number; rarity: "C" | "R" | "UR" },
+  forced = false
 ): Promise<DrawResult> {
-  const balance = await tx(async (client) =>
-    drawCore(client, input, pack, rolled, input.orderId, false));
-  const card = await loadCardById(rolled.id);
+  const { balance, cardId } = await tx(async (client) =>
+    drawCore(client, input, pack, rolled, input.orderId, false, forced));
+  const card = await loadCardById(cardId);
   return { card, balance, replay: false };
 }
 
 async function drawOnceCharged(
   input: DrawInput,
   pack: PackDef,
-  rolled: { id: number; rarity: "C" | "R" | "UR" }
+  rolled: { id: number; rarity: "C" | "R" | "UR" },
+  forced = false
 ): Promise<DrawResult> {
-  const balance = await tx(async (client) =>
-    drawCore(client, input, pack, rolled, input.orderId, true));
-  const card = await loadCardById(rolled.id);
+  const { balance, cardId } = await tx(async (client) =>
+    drawCore(client, input, pack, rolled, input.orderId, true, forced));
+  const card = await loadCardById(cardId);
   return { card, balance, replay: false };
 }
 
@@ -248,10 +251,18 @@ async function drawCore(
   rolled: { id: number; rarity: "C" | "R" | "UR" },
   orderId: string,
   charged: boolean,
-): Promise<number> {
-  const cardId = rolled.id;
-  // 保底行先锁:同用户同包并发抽卡在此串行化,计数不漂移
-  await lockPity(client, input.userId, pack.id);
+  forced = false,
+): Promise<{ balance: number; cardId: number }> {
+  // 保底行先锁:同用户同包并发抽卡在此串行化,计数不漂移。
+  // v3.1(审计 P2-9):forceRarity 以锁内计数重判——并发单抽都读到阈值前一刻的
+  // 旧值时,此前会双双强制 UR;现在只有真正跨过阈值的那一单会。
+  const lockedSince = await lockPity(client, input.userId, pack.id);
+  const shouldForce = lockedSince >= pack.pity - 1;
+  let effective = rolled;
+  if (shouldForce !== forced) {
+    effective = await rollCard(pack, shouldForce ? ("UR" as const) : undefined);
+  }
+  const cardId = effective.id;
   let balance: number;
   if (charged) {
     const upd = await client.query<{ balance: number }>(
@@ -267,7 +278,7 @@ async function drawCore(
     const cur = await client.query<{ balance: number }>(`SELECT balance FROM users WHERE id = $1`, [input.userId]);
     balance = cur.rows[0]?.balance ?? 0;
   }
-  await bumpPity(client, input.userId, pack.id, rolled.rarity);
+  await bumpPity(client, input.userId, pack.id, effective.rarity);
   await client.query(
     `INSERT INTO gacha_orders (order_id, user_id, pack_id, card_id) VALUES ($1, $2, $3, $4)`,
     [orderId, input.userId, pack.id, cardId]
@@ -280,7 +291,7 @@ async function drawCore(
   if (charged) {
     await addWalletTx(client, input.userId, -pack.price, "gacha", `抽卡:${pack.name}`);
   }
-  return balance;
+  return { balance, cardId };
 }
 
 /**
@@ -312,7 +323,7 @@ export async function tenpull(
         [subKey, input.userId]
       );
       if (existing.rows[0]) {
-        const card = await loadCardById(existing.rows[0].card_id);
+        const card = await loadCardById(existing.rows[0].card_id, client);
         cards.push(card);
         replayCount++;
         balance = (await client.query<{ balance: number }>(
@@ -324,7 +335,12 @@ export async function tenpull(
       const forceRarity = sinceUr >= pack.pity - 1 ? ("UR" as const) : undefined;
       const rolled = await rollCard(pack, forceRarity);
       try {
-        balance = await drawCore(client, input, pack, rolled, subKey, charged);
+        const r = await drawCore(client, input, pack, rolled, subKey, charged, Boolean(forceRarity));
+        balance = r.balance;
+        // 锁内重判可能改判(并发保底竞态),发卡以 drawCore 实际落单的为准;
+        // 且在事务内加载——经池再取连接在满池时会互相等死(审计 P1-1)
+        const card = await loadCardById(r.cardId, client);
+        cards.push(card);
       } catch (err: any) {
         if (err instanceof GachaError && err.status === 402) {
           shortfall = TEN - i; // 未抽的本就没扣——如实报告缺口
@@ -332,8 +348,6 @@ export async function tenpull(
         }
         throw err;
       }
-      const card = await loadCardById(rolled.id);
-      cards.push(card);
     }
     if (balance < 0) {
       balance = (await client.query<{ balance: number }>(

@@ -9,11 +9,34 @@ const LoginView = lazy(() => import("./views/LoginView.jsx"));
 const BattleView = lazy(() => import("./views/BattleView.jsx"));
 const FriendsView = lazy(() => import("./views/FriendsView.jsx"));
 const WikiView = lazy(() => import("./views/WikiView.jsx"));
+const LegalView = lazy(() => import("./views/LegalView.jsx"));
 import ChatPanel from "./chat/ChatPanel.jsx";
 import Splash from "./views/Splash.jsx";
 import { useTheme } from "./hooks/useTheme.js";
 import { useFriendPending } from "./hooks/useFriendPending.js";
 import "./views/views.css";
+
+// 根级兜底(v3.1 审计 P1-6):Header/ChatPanel 在视图边界之外,它们一旦 render
+// 抛错整棵树卸载白屏——这层只保"还能刷新",不尝试恢复状态
+class RootErrorBoundary extends Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 20 }}>
+          <div className="card-box center">
+            <p>页面出了点问题。</p>
+            <button type="button" className="btn-primary" onClick={() => window.location.reload()}>
+              刷新页面
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // 视图崩溃兜底:商业底线是任何单页异常都不能白屏整站
 class ViewErrorBoundary extends Component {
@@ -133,10 +156,30 @@ const TITLES = {
   "#/battle": "对战",
   "#/friends": "好友",
   "#/login": "登录",
+  "#/privacy": "隐私政策",
+  "#/terms": "服务条款",
 };
 
 const Shell = () => {
   const route = useHashRoute();
+  // v3.1(审计 P1-7):api-unauthorized 广播终于有了接收端——会话过期统一
+  // 引导重登,而不是各视图零散的"请求失败(401)"
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    let timer;
+    const onUnauthorized = () => {
+      setSessionExpired(true);
+      timer = setTimeout(() => {
+        setSessionExpired(false);
+        if (window.location.hash !== "#/login") window.location.hash = "#/login";
+      }, 2000);
+    };
+    window.addEventListener("api-unauthorized", onUnauthorized);
+    return () => {
+      window.removeEventListener("api-unauthorized", onUnauthorized);
+      clearTimeout(timer);
+    };
+  }, []);
   // 主题必须在 App 根部应用:只挂在单个视图里时,其余视图会回退浅色
   // (QA 实测:#/battle 准备页曾整页变白)。DexView 里的切换按钮仍独立工作。
   useTheme();
@@ -151,9 +194,17 @@ const Shell = () => {
   const [dexContext, setDexContext] = useState(null);
   const { me } = useAuth();
   const pendingFriends = useFriendPending(me?.id ?? null);
-  // 原神式开屏:每次完整加载都先进入沉浸页,点击 CTA 才进业务
+  // 原神式开屏:完整加载先进入沉浸页,点击 CTA 才进业务。
+  // v3.1(审计 P1-5):同会话只打扰一次(sessionStorage);CTA 不再劫持深链——
+  // 带 #/battle 进来刷新后留在原页,与下方"reload must stay"的 QA 教训一致
   const [entered, setEntered] = useState(false);
-  const [splashGone, setSplashGone] = useState(false);
+  const [splashGone, setSplashGone] = useState(() => {
+    try {
+      return sessionStorage.getItem("splash_seen") === "1";
+    } catch {
+      return false;
+    }
+  });
 
   // After login land on the dex — but never yank users off a route they
   // chose (reload on #/battle must stay on #/battle; QA-lesson: an effect
@@ -171,10 +222,15 @@ const Shell = () => {
   else if (route === "#/login") view = <LoginView onDone={() => go("#/packs")} />;
   else if (route === "#/battle") view = <BattleView onGoLogin={() => go("#/login")} onGoCollection={() => go("#/collection")} />;
   else if (route === "#/friends") view = <FriendsView />;
+  else if (route === "#/privacy") view = <LegalView kind="privacy" />;
+  else if (route === "#/terms") view = <LegalView kind="terms" />;
   else view = <DexView onContextChange={setDexContext} />;
 
   return (
     <div className={`app-shell ${entered && splashGone ? "app-enter" : ""}`}>
+      {sessionExpired && (
+        <div className="session-toast" role="alert">登录已过期,正在前往登录页…</div>
+      )}
       <Header route={route} go={go} pending={pendingFriends} />
       {/* key=route:切视图时重挂载,触发 view-in 过渡动画 */}
       <main className="view-frame" key={route}>
@@ -217,7 +273,15 @@ const Shell = () => {
           onEnter={() => {
             // 白幕覆盖完成后调用:应用已在下方入场,白幕再缓缓揭开
             setEntered(true);
-            go("#/home");
+            try {
+              sessionStorage.setItem("splash_seen", "1");
+            } catch {
+              /* 隐私模式:下次加载再看一次开屏,可接受 */
+            }
+            // 深链保留:只在没有明确目的地时才落到首页
+            if (!window.location.hash || window.location.hash === "#/" || window.location.hash === "#/home") {
+              go("#/home");
+            }
             setTimeout(() => setSplashGone(true), 950);
           }}
         />
@@ -227,9 +291,11 @@ const Shell = () => {
 };
 
 const App = () => (
-  <AuthProvider>
-    <Shell />
-  </AuthProvider>
+  <RootErrorBoundary>
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
+  </RootErrorBoundary>
 );
 
 export default App;

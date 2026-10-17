@@ -1,0 +1,65 @@
+# CI(v3.1):push/PR 自动跑 typecheck + build + 真实 Postgres 上的五套件。
+# 服务器与种子流程复用生产路径(内嵌 DDL + seed-once),没有 GLM key 时
+# 自动落入 mock 模式——CI 不依赖任何外部密钥。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dex
+          POSTGRES_PASSWORD: dex
+          POSTGRES_DB: pokemon_dex
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://dex:dex@localhost:54329/pokemon_dex
+      RATE_LIMIT_SCALE: "1000"
+      MOCK_LLM: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Typecheck (server)
+        run: npx tsc -p server/tsconfig.json --noEmit
+      - name: Build (frontend + server dist)
+        run: npx vite build && npx tsc -p server/tsconfig.json
+      - name: Seed catalog (gen-1 from PokeAPI)
+        run: node scripts/seed-once.mjs
+      - name: Start server
+        run: |
+          npx tsx server/src/index.ts &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5178/api/health > /dev/null; then
+              echo "server ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server failed to start"; exit 1
+      - name: Engine unit tests
+        run: node qa/battle.test.mjs
+      - name: Phase1 E2E
+        run: node qa/e2e.mjs
+      - name: Friends E2E
+        run: node qa/friends-e2e.mjs
+      - name: v23 safety net
+        run: node qa/v23-e2e.mjs
+      - name: Telemetry E2E (D3+ auto-skips without GLM key)
+        run: node qa/telemetry-e2e.mjs

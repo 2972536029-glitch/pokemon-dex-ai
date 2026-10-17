@@ -5,6 +5,11 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: {
+    // v3.1:默认 modulePreload 会把入口可达的动态 import 全部 preload——
+    // datadog(238KB)被 preload 进首屏,与"拆异步 chunk 不进首包"的意图相反。
+    modulePreload: {
+      resolveDependencies: (_filename, deps) => deps.filter((d) => !d.includes("datadog")),
+    },
     rollupOptions: {
       output: {
         // react 全家桶拆 vendor:业务代码改动不再打穿长缓存的基础包

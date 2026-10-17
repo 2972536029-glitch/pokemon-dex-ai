@@ -2,9 +2,9 @@ const ErrorState = ({ error, onRetry }) => {
   return (
     <div className="pkmn-state pkmn-error">
       <div className="pkmn-error-emoji">💢</div>
-      <p>Oops, capture failed: {error}</p>
+      <p>捕捉失败了:{String(error ?? "网络异常").slice(0, 120)}</p>
       <button className="catch-btn" onClick={onRetry}>
-        Retry
+        再试一次
       </button>
     </div>
   );

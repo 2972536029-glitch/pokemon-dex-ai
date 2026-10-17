@@ -2,6 +2,7 @@
 // - server/src/index.ts listens locally / in Docker
 // - api/index.ts hands it to Vercel as a serverless handler
 import express from "express";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,7 @@ import { mountBattle } from "./routes-battle.js";
 import { mountFriends } from "./routes-friends.js";
 import { mountLore } from "./lore.js";
 import { mountTelemetry, recordApiSample } from "./telemetry.js";
+import { mountPoke } from "./routes-poke.js";
 import { userFromRequest } from "./auth.js";
 import { clientIp } from "./http.js";
 import { allowRate } from "./ratelimit.js";
@@ -21,19 +23,63 @@ import { catalogNames, seedCatalog } from "./cards.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// CSP:静态托管 SPA 的正确形态(Auth0/Vite 社区共识)——script-src 'self'(hash
+// 文件名解决的是缓存不是 CSP;nonce+strict-dynamic 需要逐请求注入,本架构做不到);
+// style 'unsafe-inline' 是 React 内联 style 的务实取舍;us5.datadoghq.com 是
+// RUM 上报口(未启用时无害)。PokeAPI 已收进服务端代理,不出现在 connect-src。
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https://cdn.jsdelivr.net",
+  "connect-src 'self' https://us5.datadoghq.com",
+  "font-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 export function createApp() {
   loadEnvFile(path.join(__dirname, "..", "..", ".env.local"));
 
   const app = express();
   app.use(express.json({ limit: "64kb" }));
 
-  // 安全响应头(手写,零依赖;CSP 需配合构建产物单独评估,暂缓)
+  // 安全响应头(v3.1 补齐 CSP + HSTS;静态资源由 vercel.json headers 兜底)
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Content-Security-Policy", CSP);
+    res.setHeader("Strict-Transport-Security", "max-age=31536000");
     next();
+  });
+
+  // request correlation id:透传客户端的 x-request-id 或生成短 id,echo 回响应头;
+  // wrap() 的服务端日志带上它,一条失败请求的日志就能被串起来(v3.1 审计 P2-2)。
+  app.use((req, res, next) => {
+    const rid = (String(req.headers["x-request-id"] ?? "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 32))
+      || crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+    res.setHeader("x-request-id", rid);
+    (req as express.Request & { rid: string }).rid = rid;
+    next();
+  });
+
+  // CSRF 纵深(SameSite=Lax 之外的第二道):写方法的 Origin/Referer 在场时必须
+  // 与 Host 同源。浏览器一定会带(且跨站伪造请求的 Origin 是攻击者域)→ 拦截;
+  // 非浏览器客户端(curl/测试)无 Origin → 放行,不破坏脚本与测试。
+  app.use("/api", (req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD") return next();
+    const origin = req.headers.origin ?? req.headers.referer;
+    if (!origin) return next();
+    try {
+      if (new URL(String(origin)).host === req.headers.host) return next();
+    } catch {
+      /* 解析失败按跨站处理 */
+    }
+    res.status(403).json({ error: "cross_origin_blocked", message: "跨站请求被拒绝" });
   });
 
   // 冷启动门:所有 /api 先确保 schema。原来只有 phase1 的五类路径有门,
@@ -44,7 +90,7 @@ export function createApp() {
       await ensureSchema();
       next();
     } catch (err: any) {
-      console.error("[api] schema unavailable:", err?.message);
+      console.error(`[api]${(req as express.Request & { rid?: string }).rid ? ` ${(req as express.Request & { rid?: string }).rid}` : ""} schema unavailable:`, err?.message);
       res.status(503).json({ error: "db_unavailable", message: "数据库暂时不可用,请几秒后重试" });
     }
   });
@@ -62,8 +108,10 @@ export function createApp() {
       // QA-030:错误细节只进日志,响应体不向未认证访客暴露内部信息
       console.error("[health] db check failed:", err?.message);
     }
-    res.json({
-      ok: true,
+    // DB 异常时返回 503:拨测/监控盯状态码才有意义(此前恒 200,等于失明——
+    // v3.1 审计 P2-1;浅检查不重启进程,只报告)
+    res.status(db === "ok" ? 200 : 503).json({
+      ok: db === "ok",
       model: isMock ? "mock" : GLM_CONFIG.model,
       mock: isMock,
       db,
@@ -105,6 +153,7 @@ export function createApp() {
   app.use(mountFriends());
   app.use(mountLore());
   app.use(mountTelemetry());
+  app.use(mountPoke());
 
   // ---- the chat endpoint ----------------------------------------------------
   app.post("/api/chat", async (req, res) => {
@@ -213,10 +262,19 @@ export function createApp() {
   // ---- static hosting (production: one process serves API + SPA) -----------
   const distDir = path.join(__dirname, "..", "..", "dist");
   if (fs.existsSync(distDir)) {
-    app.use(express.static(distDir));
+    // hash 文件名配 immutable 长缓存;index.html 不缓存(新版本要立即生效)
+    app.use(express.static(distDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.startsWith(path.join(distDir, "assets"))) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }));
     // SPA fallback for client-side routes, WITHOUT '*' path patterns
     // (Express 5 changed wildcard syntax; middleware is version-proof).
+    // /api 的未知路径不再吞成 200 HTML(排障困惑 + 假绿温床,v3.1 审计 P2-11)
     app.use((req, res, next) => {
+      if (req.path.startsWith("/api/")) return next();
       if (req.method !== "GET" || !req.accepts("html")) return next();
       res.sendFile(path.join(distDir, "index.html"));
     });

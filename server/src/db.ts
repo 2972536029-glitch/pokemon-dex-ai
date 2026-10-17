@@ -16,8 +16,14 @@ export function getPool(): pg.Pool {
       connectionString: url,
       max: 3, // serverless: keep per-instance connections tiny
       idleTimeoutMillis: 15_000,
+      // 池满时的硬预算:防止事务内嵌套取连接的死锁演变成无限悬挂(v3.1 审计 P1-1)
+      connectionTimeoutMillis: 5_000,
+      // 语句级超时:慢查询不允许拖满函数时长(v3.1 审计 P2-10)
+      options: isLocal ? undefined : "-c statement_timeout=5000",
       // Neon and every managed Postgres require TLS; local Docker does not.
-      ssl: isLocal ? false : { rejectUnauthorized: false },
+      // rejectUnauthorized:true = 真正校验证书(2026-10-17 前是 false,等于
+      // "加密但不认证",连接可被中间人——Neon 用公共 CA 签发,系统根证书可验)。
+      ssl: isLocal ? false : { rejectUnauthorized: true },
     });
   }
   return pool;

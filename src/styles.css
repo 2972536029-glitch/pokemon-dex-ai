@@ -3,7 +3,8 @@
    Self-contained styles (extracted from the samples project).
    ==================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&family=Noto+Sans+SC:wght@500;700;900&display=swap');
+/* v3.1:远程字体 @import 已移除——fonts.googleapis.com 在中国被墙且是渲染阻塞
+   链;系统字栈(PingFang/雅黑/ui-monospace)是 CJK 站点的工业界选择 */
 
 :root {
   /* v1.3 official pokemon palette (design-v1.3.md §一) */
@@ -13,7 +14,7 @@
   --border: #D9E2EE;
   --text: #1F2933;
   --text-2: #52606D;
-  --text-dim: #98A4B0;
+  --text-dim: #64707C; /* v3.1:旧值 #98A4B0 在浅色底上仅 2.3:1,低于 AA */
   --pokeball-red: #E3350D;
   --pokeball-red-deep: #B1250A;
   --pikachu-yellow: #FFCB05;
@@ -29,7 +30,7 @@
   --glass: rgba(20, 24, 40, 0.62);
   --glass-border: rgba(255, 255, 255, 0.09);
   --glow-gold: 0 0 18px rgba(255, 200, 60, 0.35);
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "PingFang SC", monospace;
   /* 动效曲线体系:spring(回弹)/out(丝滑降速)/in(离场加速) */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -65,7 +66,7 @@ html, body, #root {
     radial-gradient(circle at 10% 10%, rgba(238, 21, 21, 0.06), transparent 40%),
     radial-gradient(circle at 90% 80%, rgba(255, 203, 5, 0.10), transparent 40%);
   color: var(--text);
-  font-family: 'Inter', 'Noto Sans SC', -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -259,7 +260,7 @@ body::after {
 }
 
 .pkmn-suggest-id {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text-dim);
   min-width: 48px;
@@ -795,7 +796,7 @@ body::after {
 }
 
 .netinfo-value {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   word-break: break-all;
   background: transparent;
@@ -866,7 +867,7 @@ body::after {
   font-size: 11px;
   font-size: 12px;
   color: var(--text-dim);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .evo-stage {

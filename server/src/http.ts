@@ -43,7 +43,8 @@ export type RouteHandler = (req: express.Request, res: express.Response) => Prom
 export function wrap(domain: string, internalMessage: string, fn: RouteHandler) {
   return (req: express.Request, res: express.Response) => {
     fn(req, res).catch((err: unknown) => {
-      console.error(`[${domain}] ${req.method} ${req.path} failed:`, err);
+      const rid = (req as express.Request & { rid?: string }).rid;
+      console.error(`[${domain}]${rid ? ` ${rid}` : ""} ${req.method} ${req.path} failed:`, err);
       const e = err as any;
       const status = e?.status ?? 500;
       const message =

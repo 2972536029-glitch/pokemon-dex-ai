@@ -70,7 +70,7 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
       authorization: `Bearer ${GLM_CONFIG.apiKey}`,
     },
     body: JSON.stringify(body),
-    signal: opts.signal,
+    signal: AbortSignal.any([opts.signal, AbortSignal.timeout(45_000)]), // v3.1:外呼 45s 上限,防上游挂起拖满函数
   });
 
   if (!res.ok) {
@@ -173,7 +173,7 @@ export async function chatComplete(
       temperature: opts.temperature ?? 0.3,
       max_tokens: opts.maxTokens ?? 300,
     }),
-    signal: opts.signal,
+    signal: AbortSignal.any([opts.signal, AbortSignal.timeout(45_000)]), // v3.1:外呼 45s 上限,防上游挂起拖满函数
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");

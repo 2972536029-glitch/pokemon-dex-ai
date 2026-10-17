@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS battles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_battles_user_active ON battles(user_id, status);
+-- v3.1:一人至多一场 active(部分唯一索引)。并发 /battle/start 的 check-then-insert
+-- 竞态会开出两场、各拿一份奖励——索引 + 插入撞 23505 回落复用,把竞态焊死在库里。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_battles_active_user ON battles (user_id) WHERE status = 'active';
 
 -- migrations for tables created before these lines existed
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS zh_name TEXT;

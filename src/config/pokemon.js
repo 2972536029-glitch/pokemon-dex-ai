@@ -1,7 +1,9 @@
 // Static configuration for the Pokémon page: API endpoint + display maps.
 
 export const MAX_ID = 1010;
-export const POKEAPI_BASE = "https://pokeapi.co/api/v2/pokemon";
+// v3.1:直连 pokeapi.co 在中国不稳定(立绘早已镜像 jsDelivr,数据一直裸连)。
+// 现在走自家服务端代理(白名单+24h 缓存),浏览器只打自己域。
+export const POKEAPI_BASE = "/api/poke/pokemon";
 
 export const TYPE_COLORS = {
   normal: "#A8A77A",

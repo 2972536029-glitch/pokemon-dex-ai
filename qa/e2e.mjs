@@ -159,8 +159,9 @@ const rText = reasonLine?.text ?? "";
 const claimsStrong = /克制|效果绝佳/.test(rText) && !/守卫/.test(rText);
 const effLine = (r.json?.state?.log ?? []).find((l) => l.kind === "move" && l.actor === "ai");
 // 理由必须与真实 AI 行动同回合配对(行动确实发生了,理由不是凭空编的)
+// v3:AI 行动可以是出招/防御/换人(混合策略),理由随意图执行时入日志
 const pairedMove = (r.json?.state?.log ?? []).some(
-  (l) => l.turn === reasonLine?.turn && l.kind === "move" && l.actor === "ai"
+  (l) => l.turn === reasonLine?.turn && l.actor === "ai" && ["move", "guard", "switch"].includes(l.kind)
 );
 check("R3 理由与行动配对", Boolean(reasonLine) && pairedMove, rText);
 r = await req("POST", `/api/battle/${reasonBattle}/forfeit`);

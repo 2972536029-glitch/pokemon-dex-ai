@@ -77,7 +77,8 @@
 - **对战并发**:乐观锁(`WHERE status='active'`)+ 行数判定,并发双击/重放不会双发奖励或复活已结束战斗
 - **serverless 适配**:DDL 内嵌为代码常量(打包只跟 JS);Neon 免费档断连自动重试
 - **观测双轨(自建采集 + Datadog)**:业务埋点与 CSAT 走自建事件表(评语落库、每日 cron 聚合成 `pokemon.*` 指标推 Datadog API),Web Vitals / JS 错误 / 会话明细走 Datadog RUM(env 门控,未配置自动降级自建兜底)——([v2.5 文档](docs/updates/v2.5-datadog.md))
-- **质量台账**:[qa/findings.md](qa/findings.md) 40 项全销项;视觉迭代 6 轮记录与截图证据在 [docs/visual-iteration-log.md](docs/visual-iteration-log.md) 与 [qa/shots/](qa/shots/)
+- **生产级加固(v3.1)**:DB TLS 证书校验、奖励 24h cap + 多层限流、CSRF Origin 纵深、CSP+HSTS、immutable 缓存、事务内连接纪律(防池死锁)、外呼全预算、PokeAPI 服务端代理(中国可用)、CI(GitHub Actions + Postgres service 跑五套件)、隐私政策/服务条款([文档](docs/updates/v3.1-production-hardening.md))
+- **质量台账**:[qa/findings.md](qa/findings.md) 40+ 项全销项;视觉迭代 6 轮记录与截图证据在 [docs/visual-iteration-log.md](docs/visual-iteration-log.md) 与 [qa/shots/](qa/shots/)
 
 ## 快速开始
 
@@ -112,6 +113,19 @@ npm start             # http://localhost:5178
 docker build -t pokemon-dex-ai .
 docker run -p 3000:3000 -e GLM_API_KEY=你的key -e DATABASE_URL=postgres://... pokemon-dex-ai
 ```
+
+## 运维速查(runbook)
+
+- **健康检查**:`/api/health`(DB 异常返回 503;拨测盯状态码)
+- **排查一条失败请求**:响应头 `x-request-id` ↔ 服务端日志同 id;Vercel dashboard 看函数日志
+- **回滚**:`vercel ls` 找上一 Ready 部署 → `vercel redeploy <url>`(或 dashboard 一键)
+- **数据库**:Neon 免费档(PITR 仅 6h,备份流水线在 backlog);连接串须用 `-pooler` 主机名
+- **冷启动**:Neon 5 分钟休眠,首请求慢数秒属正常;`/api` 有 ensureSchema 门
+- **限流调整**:全部走 `allowRate(ident, limit, windowSec)`,本地 `RATE_LIMIT_SCALE` 放大
+
+## CI
+
+push/PR 自动跑 typecheck + build + 真实 Postgres(service container)上的五套件(164 断言),无外部密钥依赖(mock 模式兜底):[.github/workflows/ci.yml](.github/workflows/ci.yml)
 
 ## 测试
 

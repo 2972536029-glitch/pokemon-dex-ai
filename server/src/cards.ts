@@ -11,16 +11,20 @@ export const CATALOG_SIZE = 151;
 /** The one card-projection every consumer shares (v2.3: was copied 6x). */
 const CARD_FIELDS = "id, name, zh_name, rarity, types, stats, sprite";
 
+/** 池或事务客户端皆可(v3.1 审计 P1-1:事务内经池再取连接 = 满池互等死锁)。 */
+export type DbLike = { query: (text: string, values?: unknown[]) => Promise<{ rows: any[] }> };
+const poolLike = { query: (text: string, values?: unknown[]) => q(text, values as unknown[]) } as DbLike;
+
 /** Load cards by id list (order NOT guaranteed — callers sort themselves). */
-export async function loadCardsByIds(ids: number[]): Promise<any[]> {
+export async function loadCardsByIds(ids: number[], db: DbLike = poolLike): Promise<any[]> {
   if (!ids.length) return [];
-  const { rows } = await q<any>(`SELECT ${CARD_FIELDS} FROM cards WHERE id = ANY($1)`, [ids]);
-  return rows;
+  const { rows } = await db.query(`SELECT ${CARD_FIELDS} FROM cards WHERE id = ANY($1)`, [ids]);
+  return rows as any[];
 }
 
 /** Load one card by id, or null. */
-export async function loadCardById(id: number): Promise<any | null> {
-  const rows = await loadCardsByIds([id]);
+export async function loadCardById(id: number, db?: DbLike): Promise<any | null> {
+  const rows = await loadCardsByIds([id], db);
   return rows[0] ?? null;
 }
 
