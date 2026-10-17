@@ -18,8 +18,9 @@ export function getPool(): pg.Pool {
       idleTimeoutMillis: 15_000,
       // 池满时的硬预算:防止事务内嵌套取连接的死锁演变成无限悬挂(v3.1 审计 P1-1)
       connectionTimeoutMillis: 5_000,
-      // 语句级超时:慢查询不允许拖满函数时长(v3.1 审计 P2-10)
-      options: isLocal ? undefined : "-c statement_timeout=5000",
+      // 注意:statement_timeout 不能放进 options——Neon 池化端(pgbouncer)拒绝
+      // startup parameter(实测构建即炸,08P01)。事务内的语句超时改由 txOnce 的
+      // SET LOCAL 提供(pgbouncer 安全);单条 q() 由函数时长与池超时兜底。
       // Neon and every managed Postgres require TLS; local Docker does not.
       // rejectUnauthorized:true = 真正校验证书(2026-10-17 前是 false,等于
       // "加密但不认证",连接可被中间人——Neon 用公共 CA 签发,系统根证书可验)。
@@ -79,6 +80,9 @@ async function txOnce<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    // 事务内语句超时(pgbouncer 安全:SET LOCAL 只作用于本事务;Neon 池化端
+    // 拒绝 startup parameter 形式的 statement_timeout,实测 08P01)
+    await client.query("SET LOCAL statement_timeout = 5000");
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
