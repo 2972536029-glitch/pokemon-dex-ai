@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { api } from "../api/client.js";
+import { trackAction } from "../telemetry/telemetry.js";
+import FeedbackPrompt from "../telemetry/FeedbackPrompt.jsx";
 import { TYPE_COLORS, TYPE_ZH, RARITY_LONG, RARITY_DOT, RARITY_RANK } from "../config/pokemon.js";
 
 // 十连揭示元数据:按稀有度升序(悬念保留到 UR 压轴),同稀有度保持抽到的原序
@@ -127,6 +129,7 @@ export default function PacksView() {
       if (skipRef.current) setStage("reveal");
       // Order settled — rotate the key so the NEXT purchase is a new order.
       delete intentIds.current[packId];
+      trackAction("pull_single", { pack: packId, replay: !!outcome.replay });
       await refresh(); // wallet balance changed
       refreshPity();
     }
@@ -237,6 +240,7 @@ export default function PacksView() {
         bulk: skipped,
       });
       if (skipped) setStage("ten-reveal");
+      trackAction("pull_ten", { pack: packId, count: cards.length, replay: !!outcome.body.replay });
       await refresh();
       refreshPity();
     } finally {
@@ -384,6 +388,8 @@ export default function PacksView() {
       <p className="hint center" style={{ marginTop: 14 }}>
         每包必得 1 张卡,概率如表所示;同一订单重试不会重复扣费。
       </p>
+
+      <FeedbackPrompt context="pack_open" title="开包体验怎么样?" />
 
       {result?.error && (
         <p className="form-error center" role="alert">

@@ -67,6 +67,8 @@ export interface SessionUser {
   id: number;
   username: string;
   balance: number;
+  /** ops 看板准入标记;经 /api/me 透出,前端仅用它决定是否显示看板入口 */
+  is_admin: boolean;
 }
 
 export function parseSessionCookie(req: { headers: { cookie?: string } }): string | null {
@@ -84,7 +86,7 @@ export async function userFromRequest(
   const sid = parseSessionCookie(req);
   if (!sid || !/^[a-f0-9]{64}$/.test(sid)) return null;
   const { rows } = await q<SessionUser>(
-    `SELECT u.id, u.username, u.balance
+    `SELECT u.id, u.username, u.balance, u.is_admin
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.id = $1 AND s.expires_at > now()`,
     [sid]
@@ -118,9 +120,9 @@ export async function register(username: string, password: string): Promise<Sess
   const hash = await hashPassword(password);
   try {
     const rows = await tx(async (client) => {
-      const ins = await client.query<{ id: number; username: string; balance: number }>(
+      const ins = await client.query<{ id: number; username: string; balance: number; is_admin: boolean }>(
         `INSERT INTO users (username, pass_hash, balance) VALUES ($1, $2, $3)
-         RETURNING id, username, balance`,
+         RETURNING id, username, balance, is_admin`,
         [username, hash, SIGNUP_BONUS]
       );
       await client.query(
@@ -140,8 +142,8 @@ export async function register(username: string, password: string): Promise<Sess
 }
 
 export async function login(username: string, password: string): Promise<SessionUser> {
-  const { rows } = await q<{ id: number; username: string; balance: number; pass_hash: string }>(
-    `SELECT id, username, balance, pass_hash FROM users WHERE username = $1`,
+  const { rows } = await q<{ id: number; username: string; balance: number; pass_hash: string; is_admin: boolean }>(
+    `SELECT id, username, balance, pass_hash, is_admin FROM users WHERE username = $1`,
     [username]
   );
   const user = rows[0];
@@ -149,7 +151,7 @@ export async function login(username: string, password: string): Promise<Session
   const generic = new HttpError(401, "用户名或密码错误", "bad_credentials");
   if (!user) throw generic;
   if (!(await verifyPassword(password, user.pass_hash))) throw generic;
-  return { id: user.id, username: user.username, balance: user.balance };
+  return { id: user.id, username: user.username, balance: user.balance, is_admin: user.is_admin };
 }
 
 export async function destroySession(sid: string): Promise<void> {

@@ -5,6 +5,7 @@ import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { TYPE_COLORS, typeZh } from "../config/pokemon.js";
 import { MAX_ID } from "../config/pokemon.js";
+import FeedbackPrompt from "../telemetry/FeedbackPrompt.jsx";
 
 // 今日精选:按天确定性取号,同一天所有人看到同一只,零请求
 const dailyId = () => (Math.floor(Date.now() / 86400000) % MAX_ID) + 1;
@@ -213,6 +214,7 @@ export default function HomeView({ go }) {
               </button>
             </div>
           )}
+          <FeedbackPrompt context="general" title="这个图鉴站用着还满意吗?" />
         </div>
       </section>
     </div>

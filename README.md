@@ -75,7 +75,8 @@
 - **抽卡幂等**:客户端生成订单号,服务端以 `(user_id, order_id)` 为主键;并发重复扣费被主键冲突回滚后重放,用户无感
 - **对战并发**:乐观锁(`WHERE status='active'`)+ 行数判定,并发双击/重放不会双发奖励或复活已结束战斗
 - **serverless 适配**:DDL 内嵌为代码常量(打包只跟 JS);Neon 免费档断连自动重试
-- **质量台账**:[qa/findings.md](qa/findings.md) 33 项全销项;视觉迭代 6 轮记录与截图证据在 [docs/visual-iteration-log.md](docs/visual-iteration-log.md) 与 [qa/shots/](qa/shots/)
+- **自建可观测性**:web-vitals / JS 错误 / 行为埋点 / API 计时进一张事件宽表,CSAT 满意度组件 + 管理员 KPI 看板(`#/metrics`),零第三方 SaaS、零数据出站([v2.4 文档](docs/updates/v2.4-observability.md))
+- **质量台账**:[qa/findings.md](qa/findings.md) 40 项全销项;视觉迭代 6 轮记录与截图证据在 [docs/visual-iteration-log.md](docs/visual-iteration-log.md) 与 [qa/shots/](qa/shots/)
 
 ## 快速开始
 
@@ -114,14 +115,18 @@ docker run -p 3000:3000 -e GLM_API_KEY=你的key -e DATABASE_URL=postgres://... 
 ## 测试
 
 ```bash
-node qa/e2e.mjs         # API 端到端 36 断言(注册/钱包/幂等抽卡/编队/对战/并发)
-node qa/battle.test.mjs # 对战引擎单测 17 断言(伤害公式/克制/替换/结束)
+node qa/e2e.mjs            # API 端到端 36 断言(注册/钱包/幂等抽卡/编队/对战/并发)
+node qa/battle.test.mjs    # 对战引擎单测 17 断言(伤害公式/克制/替换/结束)
+node qa/friends-e2e.mjs    # 好友系统 43 断言(关系/赠送索要/异步 PvP)
+node qa/v23-e2e.mjs        # v2.3 回归 24 断言(十连语义/幂等/pity 形状)
+node qa/telemetry-e2e.mjs  # v2.4 可观测性 29 断言(采集/CSAT upsert/看板准入)
 ```
 
 ## 文档
 
 - [server/README.md](server/README.md) — Agent 循环失控防护、幻觉校验保守原则、SSE 的坑
 - [docs/acceptance.md](docs/acceptance.md) — 里程碑验收清单(唯一验收靶子)
-- [qa/findings.md](qa/findings.md) — QA 台账:33 项发现全销项,含根因与修复 commit
+- [qa/findings.md](qa/findings.md) — QA 台账:40 项发现全销项,含根因与修复 commit
 - [docs/visual-iteration-log.md](docs/visual-iteration-log.md) — 6 轮视觉迭代:评分曲线与截图证据
+- [docs/updates/v2.4-observability.md](docs/updates/v2.4-observability.md) — 自建 RUM + CSAT + KPI 看板设计与取舍
 - [docs/ROADMAP.md](docs/ROADMAP.md) — 演进路线(PvP 与更多)

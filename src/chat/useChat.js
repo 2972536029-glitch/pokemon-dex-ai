@@ -11,6 +11,7 @@
 // mandatory (the same parser discipline the server-side LLM client uses).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { trackAction } from "../telemetry/telemetry.js";
 
 export const TOOL_LABELS = {
   get_pokemon: "查询图鉴",
@@ -126,6 +127,9 @@ export function useChat(context) {
           patchLast({ state: "error", text: message });
           return;
         }
+
+        // v2.4 埋点:仅统计成功建立流的提问(失败不算使用量)
+        trackAction("chat_send");
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();

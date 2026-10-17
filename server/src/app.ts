@@ -13,6 +13,7 @@ import { mountPhase1 } from "./routes-phase1.js";
 import { mountBattle } from "./routes-battle.js";
 import { mountFriends } from "./routes-friends.js";
 import { mountLore } from "./lore.js";
+import { mountTelemetry, recordApiSample } from "./telemetry.js";
 import { userFromRequest } from "./auth.js";
 import { clientIp } from "./http.js";
 import { allowRate } from "./ratelimit.js";
@@ -88,6 +89,14 @@ export function createApp() {
     }
   });
 
+  // v2.4:/api 请求计时(遥测旁路)。必须在业务路由挂载之前注册,请求才会
+  // 先经过这里、finish 钩子才来得及挂;放 schema 门之后保证 telemetry 表已
+  // 就绪。落表本身是尽力而为,不阻塞响应。
+  app.use("/api", (req, res, next) => {
+    recordApiSample(req, res);
+    next();
+  });
+
   // Phase 1: accounts / wallet / packs / collection. Mounted lazily so the
   // dex + AI chat keep working even when DATABASE_URL is absent (the router
   // returns 503 for its own routes instead of taking the app down).
@@ -95,6 +104,7 @@ export function createApp() {
   app.use(mountBattle());
   app.use(mountFriends());
   app.use(mountLore());
+  app.use(mountTelemetry());
 
   // ---- the chat endpoint ----------------------------------------------------
   app.post("/api/chat", async (req, res) => {

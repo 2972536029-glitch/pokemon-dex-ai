@@ -171,3 +171,18 @@
 - 四套件:v23 24/24 + e2e 36/36 + friends 43/44(限流器上线后扩展了 1 条)+ engine 17/17
 - 生产:部署 Ready(r7qg1byus);安全头/登录/抽卡链路经本地等价代码验证;生产浏览器 smoke 因本机到 vercel.app 网络持续中断暂缓,恢复后补做
 - 状态:验收通过(生产 smoke 待网络恢复补做一项)
+
+## QA-040 [已修复] #/metrics 看板 390px 横向溢出 10px
+- **发现**:v2.4 上线前 390px 全站巡检(QA-038 确立的纪律):`#/metrics` scrollWidth=400,两个含表格的 `.mtr-section` right=400。
+- **根因**:CSS grid 子项默认 `min-width:auto`——「API 端点 Top」表(等宽字体端点 + 4 列)的最小内容宽度反向撑破 `1fr` 轨道,把卡片和页面一起撑宽。媒体查询本身没错,是内容最小宽作祟。
+- **修法**:`.mtr-section { min-width: 0; overflow-x: auto }`——grid 轨道允许收缩,宽表在卡片内部横向滚动,页面不再出现横向滚动条。
+- **回归**:六路由(home/packs/metrics/battle/friends/collection)390px 巡检全 OK;桌面 1280px 回归(KPI 4 列 / grid 2 列,媒体查询未泄漏)OK。
+- **状态**:已修复并纳入巡检基线
+
+## v2.4 可观测性(2026-10-17,docs/updates/v2.4-observability.md)
+自建 RUM(事件宽表 telemetry_events:webvital/jserror/usage/pageview/api)+ CSAT 满意度反馈(feedback 表,20h upsert)+ 管理员 KPI 看板(#/metrics,requireAdmin + users.is_admin)。选型自建而非 SaaS:零第三方账号、零数据出站,采样/限流/聚合可控可讲。新增 qa/telemetry-e2e.mjs 29 断言,全量回归五套件 149 断言绿(e2e 36 + friends 43 + v23 24 + engine 17 + telemetry 29)。过程抓到的 bug 与断言修正:
+1. **计时中间件顺序**:res.on("finish") 钩子必须先于业务路由注册,放路由之后=永远采不到——Express 中间件顺序即生效顺序。
+2. **node-postgres DATE 陷阱**:`::date` 列被解析成带时区的 Date,JSON 序列化偏移 8 小时——聚合 SQL 用 `to_char` 直出字符串。
+3. **断言两修**(钉死真实契约):脏 anonId 的契约是"消毒降级为匿名"而非拒收(ingest 对元数据宽容、对载荷严格);持久库上看板聚合是 7 天窗口累计,绝对计数断言换结构性断言+边际证明(QA-037 假绿教训的延伸)。
+4. QA-040:390px 溢出(grid min-width:auto 教训:媒体查询管轨道,管不住内容最小宽)。
+- 状态:本地验收通过,生产部署与 smoke 见 v2.4 文档

@@ -2,6 +2,7 @@
 // 数据来自 PokeAPI 与 /api/lore,零新后端表。
 import { useEffect, useState } from "react";
 import { TYPE_COLORS, typeZh , STAT_LABELS_ZH, statColor } from "../config/pokemon.js";
+import { trackAction } from "../telemetry/telemetry.js";
 
 
 
@@ -17,6 +18,11 @@ export default function WikiView({ param, go }) {
   const [poke, setPoke] = useState(null);
   const [error, setError] = useState(null);
   const [lore, setLore] = useState(null); // {lore, checked, warnings}
+
+  // v2.4 埋点:词条浏览(内容消费指标)
+  useEffect(() => {
+    trackAction("wiki_view", { name: String(param).slice(0, 40) });
+  }, [param]);
 
   useEffect(() => {
     let cancelled = false;

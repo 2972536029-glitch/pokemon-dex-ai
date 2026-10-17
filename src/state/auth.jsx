@@ -2,6 +2,7 @@
 // guest; login/register/logout all funnel through refresh() so the header,
 // shop and collection views never disagree about who is signed in.
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { trackAction } from "../telemetry/telemetry.js";
 
 /** @typedef {{id:number, username:string, balance:number}} Me */
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ username, password }),
       })
     );
+    trackAction("login");
     await refresh();
   }, [refresh]);
 
@@ -51,6 +53,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ username, password }),
       })
     );
+    trackAction("register");
     await refresh();
   }, [refresh]);
 

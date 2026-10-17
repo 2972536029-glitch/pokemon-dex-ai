@@ -9,6 +9,9 @@ export default defineConfig({
       output: {
         // react 全家桶拆 vendor:业务代码改动不再打穿长缓存的基础包
         manualChunks(id) {
+          // web-vitals 是遥测动态 import 的:单独拆异步 chunk,
+          // 不进首屏必载的 vendor(首包体积纪律)
+          if (id.includes("web-vitals")) return "webvitals";
           // 第三方依赖统一入 vendor:业务迭代不再打穿长缓存的基础包
           if (id.includes("node_modules")) return "vendor";
         },

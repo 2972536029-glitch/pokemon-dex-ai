@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../state/auth.jsx";
 import { artworkUrl } from "../shared/artwork.js";
 import { effectiveness } from "../shared/typechart.js";
+import { trackAction } from "../telemetry/telemetry.js";
+import FeedbackPrompt from "../telemetry/FeedbackPrompt.jsx";
 import { TYPE_COLORS, typeZh, RARITY_SHORT as RARITY_LABEL } from "../config/pokemon.js";
 
 
@@ -81,6 +83,18 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   useEffect(() => {
     battleIdRef.current = battle?.battleId ?? null;
   }, [battle?.battleId]);
+
+  // v2.4 埋点:战斗结束(won/lost)。ref 记已上报的 battleId,状态翻转与
+  // 重渲染都只报一次。
+  const reportedBattleRef = useRef(null);
+  useEffect(() => {
+    const status = battle?.state?.status;
+    const bid = battle?.battleId;
+    if ((status === "won" || status === "lost") && bid && reportedBattleRef.current !== bid) {
+      reportedBattleRef.current = bid;
+      trackAction(status === "won" ? "battle_win" : "battle_lose");
+    }
+  }, [battle?.battleId, battle?.state?.status]);
 
   useEffect(() => {
     if (!me) return;
@@ -349,6 +363,8 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
               {reward > 0 && <span className="verdict-reward">+{reward} 图鉴币已入账</span>}
             </div>
           )}
+
+          {finished && <FeedbackPrompt context="battle" title="这局打得爽吗?" />}
         </div>
 
         {!finished && (

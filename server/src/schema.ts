@@ -168,4 +168,47 @@ CREATE TABLE IF NOT EXISTS rate_events (
   at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_rate_events_ident ON rate_events (ident, at);
+
+-- ==================== v2.4 可观测性(自建 RUM + 满意度) ====================
+-- 设计取舍:
+-- - 遥测一张事件宽表,靠 type 区分 webvital/jserror/usage/pageview/api:一套
+--   采集链路服务所有指标。聚合永远按 (type, 时间窗) 过滤,复合索引正好覆盖;
+--   type 单列是低基数列,不单独建索引(cardinality 教训)。
+-- - 不建物理外键(user_id → users):v2.2 起的工程约定;遥测是旁路数据,
+--   更不值得为主表写入加 FK 开销。
+-- - user_id 可空:匿名访客同样上报——匿名流量是产品漏斗的头部,只看登录
+--   用户会系统性高估留存。
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id         BIGSERIAL PRIMARY KEY,
+  type       TEXT NOT NULL,              -- webvital / jserror / usage / pageview / api
+  name       TEXT NOT NULL DEFAULT '',   -- LCP/INP/动作名/API 路由模板/错误消息
+  user_id    BIGINT,
+  anon_id    TEXT NOT NULL DEFAULT '',   -- 浏览器随机 id(localStorage,无 PII)
+  session_id TEXT NOT NULL DEFAULT '',   -- 标签页会话 id(sessionStorage)
+  path       TEXT NOT NULL DEFAULT '',   -- 页面 hash 路由或 API 路由模板
+  value      REAL,                       -- 数值指标(ms),非数值事件为 NULL
+  meta       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_telemetry_type_time ON telemetry_events (type, created_at);
+CREATE INDEX IF NOT EXISTS idx_telemetry_created ON telemetry_events (created_at);
+
+-- 满意度反馈(CSAT 1-5 + 选填一句话)。不做硬唯一约束:反馈历史要保留趋势,
+-- 防刷靠「20h 窗口 upsert(应用层)+ IP 限流」双保险,与 friend_requests 的
+-- 部分唯一索引是两种正当选型:那边状态机必须唯一,这边改口要覆盖而非拒绝。
+CREATE TABLE IF NOT EXISTS feedback (
+  id         BIGSERIAL PRIMARY KEY,
+  ident      TEXT NOT NULL,              -- "u:<user_id>" / "a:<anon_id>"
+  context    TEXT NOT NULL,              -- pack_open / battle / general / chat
+  score      SMALLINT NOT NULL CHECK (score BETWEEN 1 AND 5),
+  comment    TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_ident ON feedback (ident, context, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
+
+-- v2.4:管理员标记(数据看板准入)。生产测试号 123456 幂等回填升管理员;
+-- 运维性 UPDATE 放进迁移段,新库冷启动即生效,无需手工 psql。
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+UPDATE users SET is_admin = true WHERE username = '123456' AND is_admin = false;
 `;

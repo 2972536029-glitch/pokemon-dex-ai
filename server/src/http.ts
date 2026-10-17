@@ -15,6 +15,7 @@
 
 import express from "express";
 import { userFromRequest } from "./auth.js";
+import { q } from "./db.js";
 
 export class HttpError extends Error {
   /** machine-readable code carried on 4xx responses (5xx use the domain code) */
@@ -70,6 +71,21 @@ export async function requireUser(req: express.Request): Promise<AuthedUser> {
   const user = await userFromRequest(req);
   if (!user) throw new HttpError(401, "请先登录", "unauthorized");
   return { id: Number(user.id), username: String(user.username), balance: Number(user.balance) };
+}
+
+/**
+ * Admin guard for ops endpoints (metrics dashboard). The is_admin re-check
+ * here is one cheap indexed lookup on a low-frequency route — it buys
+ * defense in depth without touching the hot auth path.
+ */
+export async function requireAdmin(req: express.Request): Promise<AuthedUser> {
+  const user = await requireUser(req);
+  const { rows } = await q<{ is_admin: boolean }>(
+    `SELECT is_admin FROM users WHERE id = $1`,
+    [user.id]
+  );
+  if (!rows[0]?.is_admin) throw new HttpError(403, "仅管理员可访问", "forbidden");
+  return user;
 }
 
 /**
