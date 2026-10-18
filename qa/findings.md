@@ -239,8 +239,14 @@
 全新上下文独立窗口按委托书复审,逐行读 diff + 本地实测(非作者自述)。抽验结果:六套件 185 断言全绿复现(battle 34/battle-unit 11/e2e 40/friends 43/v23 24/telemetry 33);服务端 unused-var 金丝雀 exit 1;PNG 重跑 hash 逐字节一致(自绘版权主张成立);CRC32 标准向量 cbf43926 吻合。发现如下(无 P0):
 
 - QA-041 [P1][后端] eslint.config.js:36-43 — 前端 .jsx 无 unused-var 挡板:前端块只挂 react-hooks 两条规则,实测 .jsx 里加 unused var eslint exit 0(服务端 .ts 同样违规 exit 1)。ROADMAP T1 验收"故意引入 unused var → CI 红"的普适读法在 .jsx 不成立。建议:前端块补 no-unused-vars(或文档明示挡板 scope=服务端,二选一)。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
 - QA-042 [P2][后端] server/src/lore.ts:116,139 — 预算闸与记账两次独立构造 meter 对象。当前 clientIp 同请求内确定、两处 ident 恒等,无实际错桶;但违背本批自己沉淀的"同桶一处构造"纪律(v3.2 坑#3),后续改 ident 逻辑只改一处即踩坑。建议:const meter 构造一次,两处共用。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
 - QA-043 [P2][后端] server/src/battle.ts:405 — 本批删除 pickAiTeam 的唯一调用点(routes-battle.ts)后它成了零引用死代码(生产+QA 全无调用)。建议:后续批次删除,或加注释说明保留意图。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
 - QA-044 [P2][后端] server/src/llm.ts:171-176 — chat 主链路无 max_tokens:battle 160/lore 300 有界,chat 单发输出长度无上界,预算超调幅度不可控(token 预算是事后计量,输出是最难预估的一头)。建议:chat 传宽松上限(如 1000)封住最坏情况。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
 - QA-045 [P2][测试] qa/telemetry-e2e.mjs:172-186 — E1 的 14×4000 ASCII 大请求在"真实 GLM key + 未设 MOCK_LLM"的本地环境会真实外呼(~28k token 真金)。脚本自身不设防,只靠启动约定。建议:检测到无 MOCK_LLM 且有 key 时打警告或跳过 E 段。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
 - QA-046 [P2][测试] server/src/battle.ts:600-612 — battle-unit 未钉两条经济语义:KO 自动换人不给动量能量(SWITCH_IN 只给主动换人,这是"零"语义,值得钉成断言);heavy(45)/ult(90) 只有派生表断言、无回合内实际扣费断言。建议:各补一块。
+  - 状态:已修复(2091fe3,v3.2.1 批,详见 docs/updates/v3.2.1-review-fixes.md)
