@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-10-18T07:39:53.708Z",
+  "total": 686877,
+  "files": {
+    "BattleView-DObd0HmY.js": 17612,
+    "client-CTljPliL.js": 721,
+    "CollectionView-DBK-i1hc.js": 4894,
+    "datadog-6zDRZcAX.js": 238306,
+    "DexView-6h_36EMf.js": 14303,
+    "FeedbackPrompt-CYWutrak.js": 2205,
+    "FriendsView-DVM5ZOaC.js": 13325,
+    "HomeView-D2r9Ubjt.js": 5487,
+    "index-D2TzTN-j.js": 23524,
+    "index-DmCMVxVk.css": 110109,
+    "LegalView-DMl9w2e6.js": 3561,
+    "LoginView-9-5OnhuR.js": 2856,
+    "PacksView-CQdWEbXa.js": 13445,
+    "pokemon-DoyG--Qi.js": 1177,
+    "vendor-DAtxSHgt.js": 221837,
+    "webvitals-ByGxmBzI.js": 9602,
+    "WikiView-DQVibgZ5.js": 3913
+  }
+}

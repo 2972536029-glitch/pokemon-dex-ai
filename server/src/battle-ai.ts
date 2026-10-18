@@ -10,6 +10,7 @@
 
 import { BattleState, Intent, effectiveness, PType } from "./battle.js";
 import { chatComplete, GLM_CONFIG } from "./llm.js";
+import type { LlmMeter } from "./llm.js";
 import type { LlmMessage } from "./types.js";
 
 export interface ReasonedIntent {
@@ -84,7 +85,9 @@ function guardReason(reason: string, move: import("./battle.js").Move, defenderT
  */
 export async function chooseAiIntentReasoned(
   state: BattleState,
-  signal: AbortSignal
+  signal: AbortSignal,
+  /** v3.2:传入才计量 token(预算闸由调用方 routes-battle 负责)。 */
+  meter?: LlmMeter
 ): Promise<ReasonedIntent> {
   const ai = state.aiTeam[state.activeAi];
   const user = state.userTeam[state.activeUser];
@@ -98,6 +101,7 @@ export async function chooseAiIntentReasoned(
       signal: signalAny,
       maxTokens: 160,
       temperature: 0.4,
+      meter,
     });
   // GLM 上游偶发 5xx/断流:静默重试一次(12s 预算内),仍失败由调用方回退规则
   let raw: string;

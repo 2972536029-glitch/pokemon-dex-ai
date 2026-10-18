@@ -1,6 +1,9 @@
-# CI(v3.1):push/PR 自动跑 typecheck + build + 真实 Postgres 上的五套件。
-# 服务器与种子流程复用生产路径(内嵌 DDL + seed-once),没有 GLM key 时
-# 自动落入 mock 模式——CI 不依赖任何外部密钥。
+# CI(v3.2):push/PR 自动跑 lint + typecheck + build + 包体预算 + 真实 Postgres
+# 上的六套件。服务器与种子流程复用生产路径(内嵌 DDL + seed-once),没有 GLM
+# key 时自动落入 mock 模式——CI 不依赖任何外部密钥。
+# v3.2 新增:eslint 挡板(error 级)、dist/assets 体积基线、LLM 预算小值
+# (LLM_USER_DAILY_TOKENS=20000,供 telemetry 套件 E 段触发熔断降级)、
+# CRON_SECRET(供 CI 直接调用 /api/metrics/flush 验证聚合)。
 name: CI
 
 on:
@@ -29,6 +32,9 @@ jobs:
       DATABASE_URL: postgres://dex:dex@localhost:54329/pokemon_dex
       RATE_LIMIT_SCALE: "1000"
       MOCK_LLM: "1"
+      LLM_USER_DAILY_TOKENS: "20000"
+      LLM_GLOBAL_DAILY_TOKENS: "5000000"
+      CRON_SECRET: "ci-cron-secret"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,10 +43,14 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: Lint (error-level gate)
+        run: npm run lint
       - name: Typecheck (server)
         run: npx tsc -p server/tsconfig.json --noEmit
       - name: Build (frontend + server dist)
         run: npx vite build && npx tsc -p server/tsconfig.json
+      - name: Size budget (dist/assets vs baseline)
+        run: node qa/size-check.mjs
       - name: Seed catalog (gen-1 from PokeAPI)
         run: node scripts/seed-once.mjs
       - name: Start server
@@ -55,6 +65,8 @@ jobs:
           echo "server failed to start"; exit 1
       - name: Engine unit tests
         run: node qa/battle.test.mjs
+      - name: Engine table-driven unit tests (v3 economy)
+        run: node qa/battle-unit.test.mjs
       - name: Phase1 E2E
         run: node qa/e2e.mjs
       - name: Friends E2E

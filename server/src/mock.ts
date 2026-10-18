@@ -9,12 +9,28 @@
 // the last user message (or "pikachu"); second round streams an answer
 // built from that tool result, correctly — so the guard's fact check passes.
 
-import type { LlmMessage, ToolCallRequest } from "./types.js";
+import type { ToolCallRequest } from "./types.js";
 import type { LlmStreamEvent, StreamChatOptions } from "./llm.js";
+import { estimateTokens, recordLlmUsage } from "./llm.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function* streamChatMock(opts: StreamChatOptions): AsyncGenerator<LlmStreamEvent> {
+  // mock 不花钱,但照实计量:预算闸的降级路径主要在 CI/mock 里被测试,
+  // mock 不入账 = CI 里预算永远不触发 = 测试与生产行为脱钩(v3.1 的教训)。
+  if (opts.meter) recordLlmUsage(opts.meter, estimateTokens(...opts.messages.map((m) => String(m.content ?? ""))));
+  let outChars = 0;
+  try {
+    yield* mockBody(opts, (n) => (outChars += n));
+  } finally {
+    if (opts.meter && outChars > 0) recordLlmUsage(opts.meter, Math.ceil(outChars / 2));
+  }
+}
+
+async function* mockBody(
+  opts: StreamChatOptions,
+  onText: (chars: number) => void
+): AsyncGenerator<LlmStreamEvent> {
   const lastUser = [...opts.messages].reverse().find((m) => m.role === "user");
   const question = lastUser?.content ?? "";
   const hasToolResult = opts.messages.some((m) => m.role === "tool");
@@ -56,6 +72,7 @@ export async function* streamChatMock(opts: StreamChatOptions): AsyncGenerator<L
 
   for (const chunk of text.match(/.{1,6}/gs) ?? []) {
     if (opts.signal.aborted) return;
+    onText(chunk.length);
     yield { type: "text", text: chunk };
     await sleep(30);
   }

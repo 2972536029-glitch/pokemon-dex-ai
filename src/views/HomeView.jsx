@@ -99,7 +99,8 @@ export default function HomeView({ go }) {
       {/* Hero:开屏同款夜空语言,静态低负担 */}
       <section className="home-hero">
         <div className="home-hero-stars" aria-hidden="true" />
-        <img className="home-hero-float" src={artworkUrl(149)} alt="" aria-hidden="true" />
+        {/* v3.2:hero 立绘是首屏 LCP,fetchpriority 高优先级拉取(T5) */}
+        <img className="home-hero-float" src={artworkUrl(149)} alt="" aria-hidden="true" fetchPriority="high" />
         <p className="home-hero-eyebrow">POKÉMON DEX · AI</p>
         <h1 className="home-hero-title">
           梦幻图鉴<span className="hero-dot">的</span>宝可梦冒险

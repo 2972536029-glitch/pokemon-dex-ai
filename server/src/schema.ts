@@ -214,4 +214,23 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
 -- 供未来管理功能使用;生产测试号 123456 幂等回填,新库冷启动即生效。
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
 UPDATE users SET is_admin = true WHERE username = '123456' AND is_admin = false;
+
+-- ==================== v3.2 LLM token 预算与熔断(ROADMAP-NEXT T2) ====================
+-- 每行 = 一次 LLM 外呼的近似用量(chars/2,CJK 友好)或一次熔断事件(capped)。
+-- - ident 承载预算桶:"u:<id>" / "ip:<ip>";feature 区分消费点(chat/battle/lore)。
+-- - capped 行 tokens 恒为 0:它是熔断标记不是消耗,预算求和一律 FILTER (WHERE NOT capped)。
+-- - 索引:(ident, created_at) 服务每请求的预算桶求查(ident 高基数,值得建);
+--   created_at 单列索引服务全局预算求和与保留期清理。无外键、feature 用 TEXT:
+--   v2.2 起的工程约定,消费点扩展只加常量不改表。
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id         BIGSERIAL PRIMARY KEY,
+  feature    TEXT NOT NULL,               -- chat / battle / lore
+  ident      TEXT NOT NULL,               -- "u:<user_id>" / "ip:<ip>"
+  user_id    BIGINT,
+  tokens     INTEGER NOT NULL DEFAULT 0,  -- 近似 token(字符/2)
+  capped     BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_ident ON llm_usage (ident, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage (created_at);
 `;

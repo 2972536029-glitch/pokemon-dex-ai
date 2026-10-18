@@ -106,7 +106,7 @@ interface Datum {
 /** 24h 滚动窗口聚合(不打断 QA-037 的时区纪律:不看「天」,只看滚动窗)。 */
 async function collectWindow(): Promise<Datum[]> {
   const win = "created_at > now() - interval '24 hours'";
-  const [usage, apiAgg, dau, fb] = await Promise.all([
+  const [usage, apiAgg, dau, fb, llm] = await Promise.all([
     q<{ action: string; n: number }>(
       `SELECT name AS action, count(*)::int AS n
        FROM telemetry_events WHERE type = 'usage' AND ${win}
@@ -130,6 +130,14 @@ async function collectWindow(): Promise<Datum[]> {
        FROM feedback WHERE ${win}`,
       []
     ),
+    // v3.2:LLM token 用量与熔断次数(按消费点拆分,pokemon.llm.tokens{feature})
+    q<{ feature: string; tokens: number; capped: number }>(
+      `SELECT feature, COALESCE(sum(tokens), 0)::int AS tokens,
+              count(*) FILTER (WHERE capped)::int AS capped
+       FROM llm_usage WHERE ${win}
+       GROUP BY feature`,
+      []
+    ),
   ]);
 
   const tags = ["service:pokemon-dex-ai", "env:prod"];
@@ -148,6 +156,14 @@ async function collectWindow(): Promise<Datum[]> {
       type: "rate",
       tags,
     });
+  }
+  for (const l of llm.rows) {
+    // feature 拼进 tag 而非指标名:Datadog 侧一张图按 feature 分组即可,不用枚举指标
+    const fTags = [...tags, `feature:${cleanText(l.feature, 20).replace(/[^a-z0-9_]/gi, "_")}`];
+    data.push({ metric: "pokemon.llm.tokens", value: Number(l.tokens), type: "rate", tags: fTags });
+    if (l.capped > 0) {
+      data.push({ metric: "pokemon.llm.capped", value: Number(l.capped), type: "rate", tags: fTags });
+    }
   }
   return data;
 }
@@ -273,7 +289,7 @@ export function mountTelemetry(): express.Router {
          WHERE ident = $1 AND context = $4 AND created_at > now() - interval '20 hours'`,
         [ident, score, comment, context]
       );
-      let updated = (upd.rowCount ?? 0) > 0;
+      const updated = (upd.rowCount ?? 0) > 0;
       if (!updated) {
         await q(
           `INSERT INTO feedback (ident, context, score, comment) VALUES ($1, $2, $3, $4)`,

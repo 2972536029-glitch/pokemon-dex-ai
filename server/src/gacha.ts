@@ -7,7 +7,6 @@
 //   threshold the roll is forced to UR. Counter lives in gacha_pity and is
 //   updated inside the draw transaction under a row lock.
 
-import crypto from "node:crypto";
 import type { PoolClient } from "pg";
 import { q, tx } from "./db.js";
 import { AUTH_CONSTANTS } from "./auth.js";

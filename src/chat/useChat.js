@@ -165,6 +165,17 @@ export function useChat(context) {
             case "replace":
               patchLast({ text: payload.text ?? "" });
               break;
+            case "notice":
+              // 服务端降级说明(如 AI 额度用完切离线模式):拼在正文开头,
+              // 后续 delta 追加在其后——降级原因必须让用户看见,不能静默换引擎。
+              setMessages((prev) => {
+                if (prev.length === 0) return prev;
+                const next = prev.slice();
+                const last = next[next.length - 1];
+                next[next.length - 1] = { ...last, text: last.text + (payload.message ?? "") + "\n\n" };
+                return next;
+              });
+              break;
             case "error":
               patchLast({ state: "error", text: payload.message ?? "AI 服务出错了" });
               break;

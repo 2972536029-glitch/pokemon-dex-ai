@@ -138,5 +138,128 @@ if (!seedKey) {
   check("D10 Datadog 推送结果为布尔(本地缺 key 应 false)", typeof fl.dd?.pushed === "boolean", JSON.stringify(fl.dd));
 }
 
+// ---- E: LLM token 预算与熔断(v3.2,ROADMAP-NEXT T2)----
+// 前置约定:server 以 LLM_USER_DAILY_TOKENS=20000(小值)启动(CI 与本地一致),
+// 全局预算 LLM_GLOBAL_DAILY_TOKENS 保持大值——单用户压满不该误伤别人。
+// E1-E3:单用户压满 → 降级(200 + notice,绝不是 500)且 notice 带 reason;
+// E4:用量与熔断次数出现在 flush payload(pokemon.llm.tokens{feature:chat});
+// E5-E6:全局熔断(合成行压满全局桶)→ 任何用户降级;清理合成行后恢复。
+
+// SSE 帮手:POST /api/chat 并把事件流解析成数组(与 useChat 的手写 SSE 解析同纪律)
+async function chat(body, cookie) {
+  const res = await fetch(BASE + "/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  const events = [];
+  for (const block of text.split("\n\n")) {
+    const name = (block.match(/^event:\s*(.+)$/m) ?? [])[1]?.trim() ?? "message";
+    const dataLine = (block.match(/^data:\s*(.+)$/m) ?? [])[1];
+    if (dataLine !== undefined) {
+      try { events.push({ event: name, data: JSON.parse(dataLine) }); } catch {}
+    }
+  }
+  return { status: res.status, events, text };
+}
+const hasEvent = (r, name) => r.events.some((e) => e.event === name);
+const noticeOf = (r) => r.events.find((e) => e.event === "notice")?.data?.message ?? "";
+
+// 15×4000 ASCII 字符 ≈ 28k token(字符/2 口径)> 20k 上限:一发压满个人桶,
+// 第二发必被闸住。ASCII 是刻意的:3900 个汉字就是 12KB UTF-8,轻松顶爆 64KB
+// body 上限,拿不到"压满却 200"的断言点。
+const maxedMessages = [
+  { role: "user", content: "皮卡丘" },
+  ...Array.from({ length: 14 }, () => ({ role: "user", content: "a".repeat(4000) })),
+];
+
+const U2 = `qallm${SUFFIX}`;
+r = await req("POST", "/api/auth/register", { body: { username: U2, password: "qa123456" } });
+check("E0 预算测试用户注册", Boolean(r.json?.user), r.text);
+
+const chat1 = await chat({ messages: maxedMessages }, jar);
+check(
+  "E1 首发大请求正常完成(mock/真实皆可,usage 已入账)",
+  chat1.status === 200 && hasEvent(chat1, "done") && !hasEvent(chat1, "error") && !hasEvent(chat1, "notice"),
+  chat1.text.slice(0, 150)
+);
+
+const chat2 = await chat({ messages: maxedMessages }, jar);
+check(
+  "E2 压满后降级而非 500:200 + notice 带 reason + 仍出 done",
+  chat2.status === 200 && hasEvent(chat2, "notice") && hasEvent(chat2, "done") && !hasEvent(chat2, "error"),
+  chat2.text.slice(0, 150)
+);
+check("E3 降级 reason 行说明额度(历史教训:降级不许哑)", /额度/.test(noticeOf(chat2)), noticeOf(chat2));
+
+// flush 鉴权:CI 用 CRON_SECRET;本地回落 x-seed-key(D 段已读出 seedKey)
+const cronSecret = process.env.CRON_SECRET || "";
+const flushHeaders = cronSecret
+  ? { authorization: `Bearer ${cronSecret}` }
+  : seedKey
+    ? { "x-seed-key": seedKey }
+    : null;
+if (!flushHeaders) {
+  console.log("SKIP | E4 无 CRON_SECRET/GLM_API_KEY,flush 指标断言无法执行");
+} else {
+  r = await req("GET", "/api/metrics/flush", { headers: flushHeaders });
+  const fl = r.json;
+  const llmTokens = (fl?.metrics ?? []).find(
+    (m) => m.metric === "pokemon.llm.tokens" && (m.tags ?? []).includes("feature:chat")
+  );
+  const llmCapped = (fl?.metrics ?? []).find(
+    (m) => m.metric === "pokemon.llm.capped" && (m.tags ?? []).includes("feature:chat")
+  );
+  check("E4 flush 暴露 pokemon.llm.tokens{feature:chat} ≥ 28000", Boolean(llmTokens) && Number(llmTokens.value) >= 28_000, JSON.stringify(fl?.metrics?.filter((m) => m.metric.startsWith("pokemon.llm"))));
+  check("E5 flush 暴露 pokemon.llm.capped ≥ 1", Boolean(llmCapped) && Number(llmCapped.value) >= 1, JSON.stringify(llmCapped));
+}
+
+// 全局熔断:直连 DB 插入合成用量行压满全局桶(不污染任何真实用户桶)。
+// 验证用户必须是个人桶干净的新用户——否则降级可能只是个人桶触发的,
+// 证明不了全局熔断。测试必须自清理,否则全站 LLM 一直处于熔断态。
+let dbUrl = process.env.DATABASE_URL || "";
+if (!dbUrl) {
+  try {
+    const envText = fs.readFileSync(new URL("../.env.local", import.meta.url), "utf8");
+    const m = envText.match(/^DATABASE_URL=(.+?)\s*$/m);
+    if (m) dbUrl = m[1];
+  } catch {}
+}
+if (!dbUrl) {
+  console.log("SKIP | E6-E8 无 DATABASE_URL,全局熔断断言无法执行");
+} else {
+  const U3 = `qallmr${SUFFIX}`;
+  r = await req("POST", "/api/auth/register", { body: { username: U3, password: "qa123456" } });
+  const jarU3 = jar;
+  check("E6 熔断验证用户注册", Boolean(r.json?.user), r.text);
+
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO llm_usage (feature, ident, tokens) VALUES ('chat', 'qa-synthetic-global', 999999999)`
+    );
+    const capped = await chat({ messages: [{ role: "user", content: "你好" }] }, jarU3);
+    check(
+      "E7 全局熔断:个人桶干净的新用户同样被降级",
+      capped.status === 200 && hasEvent(capped, "notice") && hasEvent(capped, "done") && !hasEvent(capped, "error"),
+      capped.text.slice(0, 150)
+    );
+    check("E8 全局熔断的 reason 与个人额度不同", /全网/.test(noticeOf(capped)), noticeOf(capped));
+  } finally {
+    await client.query(`DELETE FROM llm_usage WHERE ident = 'qa-synthetic-global'`);
+    await client.end();
+  }
+
+  const recovered = await chat({ messages: [{ role: "user", content: "你好" }] }, jarU3);
+  check(
+    "E9 清理合成行后同一用户立即恢复(无 notice,正常 done)",
+    recovered.status === 200 && hasEvent(recovered, "done") && !hasEvent(recovered, "notice") && !hasEvent(recovered, "error"),
+    recovered.text.slice(0, 150)
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

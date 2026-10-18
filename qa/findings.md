@@ -224,3 +224,13 @@
 4. R3 断言更新:v3 AI 行动可为 move/guard/switch(不再是必然出招),配对断言同步扩展。
 5. **CI 首跑红(本地绿)**:无 GLM key 的环境(CI/mock)reasoned 战斗走回退,回退路径没有 reason 行 → R2 挂。本地一直绿是因为 .env.local 的 key 仍被注入(MOCK_LLM 只影响 isMock 展示,不等于 key 缺席)。修法:回退路径也写 reason("模型暂时不可用,本轮使用规则策略")。教训:**mock 与"无凭证"是两个环境**,CI 矩阵里必须有无 key 一档;本地复现 CI 要把 key 显式置空(loadEnvFile 按"变量存在"判断,不覆盖已定义的空值)。
 - 验证:五套件 164 断言全绿;跨站 POST 403/无 Origin 放行/代理 200/浏览器 CSP 零违规实测通过
+
+## v3.2 P0 工程挡板(2026-10-18,docs/updates/v3.2-p0-hardening.md)
+按 docs/ROADMAP-NEXT.md 执行 P0 六项(T1 lint/CI 挡板 + 包体预算、T2 LLM token 预算与熔断、T3 定时拨测、T4 战斗表驱动单测、T5 manifest/og 自绘、T6 __Host- cookie)。新增 qa/battle-unit.test.mjs(node:test 零 DB)与 qa/size-check.mjs(+size-baseline.json 基线);telemetry 套件 +10 断言(E0-E9)。过程抓到的坑:
+1. **降档单测首版必然不触发**:AI 迅招先手的痛感 +10 恰好把用户补到 25 能量 = strike 费用,降档分支不进——同优先级场景"谁先手"直接改变能量算术,写能量链断言必须按引擎事件顺序逐项排。
+2. **减半单测 RNG 对齐双坑**:同速同优先级掷先手币本身消耗随机数(两条场景序号错一位);ghost/normal 是互免(双方伤害全 0)。修法:攻击方极速走速度分支不掷币 + 电/地/飞行单向免疫组合。
+3. **预算闸与记账同桶原则**:chat 的 ident 在 app.ts 一处决定,gate 与 meter 收同一个对象——分桶错位的表现是"预算永远不满",日志极难发现。
+4. **E 段全局熔断的用户隔离**:验证用户必须个人桶干净,否则降级可能只是个人桶触发,证明不了全局桶;合成行测后必须删,否则全站 LLM 永久熔断。
+5. **probe.yml 评估/落盘顺序**:评估必须直接消费 step outputs,不能读"本轮还没写"的状态文件。
+6. eslint 挡板选型:error 级只拦 no-unused-vars 等硬伤 + rules-of-hooks;exhaustive-deps 设 warn(存量 10 处非阻塞)——挡板拦 error,不为过挡板大改 hooks。
+- 验证:六套件 185 断言全绿(battle 34 + battle-unit 11 + e2e 40 + friends 43 + v23 24 + telemetry 33);挡板验收(unused-var → exit 1);浏览器实测(manifest/icons/og 200、chat 正常 + 降级 notice 真实渲染)。生产验证待 push(probe dispatch + __Host- Set-Cookie 线上确认)。

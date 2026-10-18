@@ -17,7 +17,6 @@ import { promisify } from "node:util";
 import { q, tx } from "./db.js";
 import { HttpError } from "./http.js";
 
-const SESSION_COOKIE = "dex_session";
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 const SIGNUP_BONUS = 300;
 const DAILY_BONUS = 50;
@@ -47,15 +46,28 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 // ---- session helpers -------------------------------------------------------
+// v3.2:生产环境用 __Host- 前缀——浏览器硬校验 Secure + Path=/ + 无 Domain,
+// 子域(被攻破的子域/同站攻击者)无法再向主域投递会话 cookie。前缀只在
+// HTTPS 下有效,Vercel 生产恒 HTTPS 满足;本地 http://localhost 不满足,
+// 按环境切回旧名(QA 脚本的 cookie jar 解析因此无需改动)。代价:切换部署
+// 后所有旧会话失效一次,重登即恢复(已在路线图中明示可接受)。
+export function sessionCookieName(): string {
+  const isProd = process.env.NODE_ENV === "production" || process.env.HTTPS_ONLY === "1";
+  return isProd ? "__Host-dex_session" : "dex_session";
+}
+
 export function sessionCookie(value: string, maxAgeSec: number, secure: boolean): string {
+  const name = sessionCookieName();
   const parts = [
-    `${SESSION_COOKIE}=${value}`,
+    `${name}=${value}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
     `Max-Age=${maxAgeSec}`,
   ];
-  if (secure) parts.push("Secure");
+  // __Host- 前缀要求 Secure 是浏览器硬性规定;即使调用方环境判定出错也带上,
+  // 宁可 cookie 被浏览器拒收(会话不可用)也不发出一个不符合前缀契约的名字。
+  if (secure || name.startsWith("__Host-")) parts.push("Secure");
   return parts.join("; ");
 }
 
@@ -70,10 +82,13 @@ export interface SessionUser {
 }
 
 export function parseSessionCookie(req: { headers: { cookie?: string } }): string | null {
+  // 只认当前环境的名字:不兼容读旧名——旧名没有 __Host- 保护,接受它等于
+  // 给子域投递留后门,前缀加固就白做了(部署后旧会话失效是明示代价)。
+  const name = sessionCookieName();
   const raw = req.headers.cookie ?? "";
   for (const part of raw.split(";")) {
     const [k, ...rest] = part.trim().split("=");
-    if (k === SESSION_COOKIE) return rest.join("=");
+    if (k === name) return rest.join("=");
   }
   return null;
 }
@@ -156,4 +171,4 @@ export async function destroySession(sid: string): Promise<void> {
   await q(`DELETE FROM sessions WHERE id = $1`, [sid]);
 }
 
-export const AUTH_CONSTANTS = { SIGNUP_BONUS, DAILY_BONUS, SESSION_COOKIE };
+export const AUTH_CONSTANTS = { SIGNUP_BONUS, DAILY_BONUS };

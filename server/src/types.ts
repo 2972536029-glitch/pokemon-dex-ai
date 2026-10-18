@@ -55,6 +55,7 @@ export type ChatEvent =
     }
   | { event: "round"; data: { round: number; phase: "tools" | "verify" | "correct" } }
   | { event: "replace"; data: { text: string } }
+  | { event: "notice"; data: { message: string } }
   | { event: "error"; data: { message: string } }
   | {
       event: "done";

@@ -12,14 +12,14 @@ import { q, tx } from "./db.js";
 import { requireUser } from "./http.js";
 import { HttpError, wrap } from "./http.js";
 import { allowRate } from "./ratelimit.js";
-import { addWalletTx } from "./wallet.js";
-import { AUTH_CONSTANTS } from "./auth.js";
 import {
-  BattleState, Intent, battleMonFromCard, chooseAiAction, pickAiTeam,
+  BattleState, Intent, battleMonFromCard, chooseAiAction,
   resolveTurn, resolveBattleTurn, generateAiIntent, intentToAction,
   intentStillValid, Action, V3Action, LogEntry, clampBattleState,
 } from "./battle.js";
 import { chooseAiIntentReasoned } from "./battle-ai.js";
+import { llmGate, type LlmMeter } from "./llm.js";
+import type { Rng } from "./battle.js";
 
 const BATTLE_REWARD = 100;
 const TEAM_SIZE = 3;
@@ -33,6 +33,33 @@ function clientSignal(req: express.Request): AbortSignal {
   const ac = new AbortController();
   req.on("close", () => ac.abort());
   return ac.signal;
+}
+
+/** v3.2:reasoned 意图的统一入口 = 预算闸 → 问模型 → 失败/超预算都规则兜底。
+ *  开局与回合后两个调用点共用;无论哪条路,意图都必须带 reason 行——
+ *  降级不带理由 = 日志与 UI 双双撒谎(v3.1 的教训,见 qa/findings.md)。 */
+async function reasonedIntentWithBudget(
+  state: BattleState,
+  signal: AbortSignal,
+  userId: number,
+  fallbackRng: Rng
+): Promise<Intent> {
+  const meter: LlmMeter = { feature: "battle", ident: `u:${userId}`, userId };
+  if (!(await llmGate(meter)).ok) {
+    const intent = generateAiIntent(state, fallbackRng);
+    intent.reason = "今日 AI 预算已用完,本轮使用规则策略";
+    return intent;
+  }
+  try {
+    const chosen = await chooseAiIntentReasoned(state, signal, meter);
+    chosen.intent.reason = chosen.reason;
+    return chosen.intent;
+  } catch (err: any) {
+    console.warn("[battle] reasoned intent fell back to mixed strategy:", err?.message);
+    const intent = generateAiIntent(state, fallbackRng);
+    intent.reason = "模型暂时不可用,本轮使用规则策略";
+    return intent;
+  }
 }
 
 export function mountBattle(): express.Router {
@@ -156,16 +183,7 @@ export function mountBattle(): express.Router {
     if (mode === "reasoned") {
       // reasoned 模式开局意图也问模型(理由随意图存储、执行时入日志,保证
       // "第一回合就有理由且与行动同回合"——开战多等一次模型,换来日志真实性)
-      try {
-        const chosen = await chooseAiIntentReasoned(state, AbortSignal.timeout(12_000));
-        chosen.intent.reason = chosen.reason;
-        state.aiIntent = chosen.intent;
-      } catch (err: any) {
-        console.warn("[battle] opening reasoned intent fell back to rules:", err?.message);
-        state.aiIntent = generateAiIntent(state, intentRng);
-        // 回退也要有理由行:CI/mock 环境无模型,战斗照常但日志如实说明
-        state.aiIntent.reason = "模型暂时不可用,本轮使用规则策略";
-      }
+      state.aiIntent = await reasonedIntentWithBudget(state, AbortSignal.timeout(12_000), user.id, intentRng);
     } else {
       state.aiIntent = generateAiIntent(state, intentRng);
     }
@@ -292,15 +310,7 @@ export function mountBattle(): express.Router {
     // asks the model with the post-turn board; falls back to mixed strategy).
     if (isV3 && state.status === "active") {
       if (state.mode === "reasoned") {
-        try {
-          const chosen = await chooseAiIntentReasoned(state, clientSignal(req));
-          state.aiIntent = chosen.intent;
-          state.aiIntent.reason = chosen.reason;
-        } catch (err: any) {
-          console.warn("[battle] reasoned intent fell back to mixed strategy:", err?.message);
-          state.aiIntent = generateAiIntent(state, rng);
-          state.aiIntent.reason = "模型暂时不可用,本轮使用规则策略";
-        }
+        state.aiIntent = await reasonedIntentWithBudget(state, clientSignal(req), user.id, rng);
       } else {
         state.aiIntent = generateAiIntent(state, rng);
       }

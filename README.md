@@ -125,17 +125,22 @@ docker run -p 3000:3000 -e GLM_API_KEY=你的key -e DATABASE_URL=postgres://... 
 
 ## CI
 
-push/PR 自动跑 typecheck + build + 真实 Postgres(service container)上的五套件(164 断言),无外部密钥依赖(mock 模式兜底):[.github/workflows/ci.yml](.github/workflows/ci.yml)
+push/PR 自动跑 lint(error 挡板)+ typecheck + build + 包体预算 + 真实 Postgres(service container)上的六套件(185 断言),无外部密钥依赖(mock 模式兜底):[.github/workflows/ci.yml](.github/workflows/ci.yml)。另有 [probe.yml](.github/workflows/probe.yml) 每 30 分钟对生产拨测(health/poke 代理/首页),连续 2 次失败开 issue、恢复自动关。
 
 ## 测试
 
 ```bash
-node qa/e2e.mjs            # API 端到端 36 断言(注册/钱包/幂等抽卡/编队/对战/并发)
-node qa/battle.test.mjs    # 对战引擎单测 17 断言(伤害公式/克制/替换/结束)
+npm run lint               # eslint 挡板(error 级;react-hooks 规则集)
+npm run build && node qa/size-check.mjs   # 包体预算:超基线 +10% 红(--update 立新基线)
+node qa/battle.test.mjs    # 对战引擎回归 34 断言(伤害公式/克制/替换/v3 结算)
+node qa/battle-unit.test.mjs  # v3 经济表驱动单测 11 块(能量常数/克制表/先制度/降档,零 DB)
+node qa/e2e.mjs            # API 端到端 40 断言(注册/钱包/幂等抽卡/编队/对战/并发)
 node qa/friends-e2e.mjs    # 好友系统 43 断言(关系/赠送索要/异步 PvP)
 node qa/v23-e2e.mjs        # v2.3 回归 24 断言(十连语义/幂等/pity 形状)
-node qa/telemetry-e2e.mjs  # v2.5 可观测性 23 断言(采集/CSAT upsert/指标推送鉴权)
+node qa/telemetry-e2e.mjs  # 可观测性 + LLM 预算 33 断言(采集/CSAT/指标推送/熔断降级)
 ```
+
+LLM 预算环境变量:`LLM_USER_DAILY_TOKENS`(默认 100k)/`LLM_GLOBAL_DAILY_TOKENS`(默认 2M)——token≈字符/2 近似;不随 `RATE_LIMIT_SCALE` 放大,QA 用小值触发熔断路径。本地起 QA 服务器示例:`MOCK_LLM=1 LLM_USER_DAILY_TOKENS=20000 CRON_SECRET=dev npx tsx server/src/index.ts`。
 
 ## 文档
 

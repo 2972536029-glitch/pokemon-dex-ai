@@ -5,7 +5,7 @@
 // model can ask "what are my cards"; it cannot ask "what are user 7's cards"
 // because no tool accepts a user parameter at all.
 
-import type { ToolDef, ToolResult, ToolArgs } from "./types.js";
+import type { ToolDef, ToolResult } from "./types.js";
 import { q } from "./db.js";
 import { PACKS } from "./gacha.js";
 import { EN_TO_ZH } from "./guard.js";

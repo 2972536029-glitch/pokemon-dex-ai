@@ -17,6 +17,7 @@
 // AND in-flight PokeAPI calls).
 
 import { GLM_CONFIG, streamChat } from "./llm.js";
+import type { LlmMeter } from "./llm.js";
 import { streamChatMock } from "./mock.js";
 import { TOOLS, executeTool } from "./tools.js";
 import { userTools } from "./tools-user.js";
@@ -70,6 +71,11 @@ export interface AgentOptions {
   catalogNames?: string[];
   signal: AbortSignal;
   emit: (event: ChatEvent) => void;
+  /** v3.2:LLM 预算熔断降级——强制走 mock 管线并把原因如实告知用户。
+   *  熔断是降级不是错误:用户仍能得到(规则生成的)答案。 */
+  degrade?: { reason: string };
+  /** v3.2:token 计量桶(gate 与记账必须同桶,由调用方按 IP/用户定)。 */
+  meter?: LlmMeter;
 }
 
 export async function runAgent(opts: AgentOptions): Promise<void> {
@@ -91,8 +97,13 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
   const toolLog: ToolLogEntry[] = [];
   // Mock mode: no key configured, or explicitly requested. Keeps the app
   // demo-able and gives CI a full-loop test path that costs nothing.
-  const useMock = process.env.MOCK_LLM === "1" || !GLM_CONFIG.apiKey;
+  // v3.2:预算熔断同样落进 mock 管线——但必须先说清为什么(历史教训:降级
+  // 路径没有 reason 行 = 日志与 UI 双双撒谎)。
+  const useMock = Boolean(opts.degrade) || process.env.MOCK_LLM === "1" || !GLM_CONFIG.apiKey;
   const stream = useMock ? streamChatMock : streamChat;
+  if (opts.degrade) {
+    emit({ event: "notice", data: { message: opts.degrade.reason } });
+  }
 
   let finalText = "";
 
@@ -104,7 +115,7 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
     let finishReason = "";
     let calls: ToolCallRequest[] = [];
 
-    for await (const ev of stream({ messages: llmMessages, tools: allTools.map(toApiTool), signal })) {
+    for await (const ev of stream({ messages: llmMessages, tools: allTools.map(toApiTool), signal, meter: opts.meter })) {
       if (ev.type === "text") {
         text += ev.text;
         emit({ event: "delta", data: { text: ev.text } });
@@ -216,7 +227,7 @@ export async function runAgent(opts: AgentOptions): Promise<void> {
       { role: "user", content: correctionMessage(firstCheckTotal.problems) + ownedHint },
     ];
     let corrected = "";
-    for await (const ev of stream({ messages: correction, signal })) {
+    for await (const ev of stream({ messages: correction, signal, meter: opts.meter })) {
       if (ev.type === "text") corrected += ev.text;
       if (signal.aborted) return;
     }

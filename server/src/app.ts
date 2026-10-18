@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.js";
-import { GLM_CONFIG } from "./llm.js";
+import { GLM_CONFIG, llmGate } from "./llm.js";
 import { LlmError } from "./types.js";
 import { loadEnvFile } from "./env.js";
 import { mountPhase1 } from "./routes-phase1.js";
@@ -235,6 +235,21 @@ export function createApp() {
       console.warn("[chat] user context unavailable, continuing anonymous:", (err as Error).message);
     }
 
+    // v3.2:LLM 预算闸(登录按用户桶,匿名按 IP 桶——gate 与记账同桶)。
+    // 超限不是 429:降级进规则管线照常回答,notice 把原因如实告诉用户——
+    // 成本护栏不能以可用性为代价;降级路径必须带 reason 行(v3.1 教训)。
+    const meter = {
+      feature: "chat" as const,
+      ident: userId ? `u:${userId}` : `ip:${clientIp(req)}`,
+      userId,
+    };
+    const gate = await llmGate(meter);
+    const degrade = gate.ok
+      ? undefined
+      : gate.reason === "global_budget"
+        ? { reason: "全网 AI 额度暂时用完,已切换到离线图鉴模式,回答由规则生成。" }
+        : { reason: "你今天的 AI 额度已用完,已切换到离线图鉴模式,明天恢复。" };
+
     runAgent({
       history,
       contextName,
@@ -242,6 +257,8 @@ export function createApp() {
       catalogNames: names,
       signal: controller.signal,
       emit,
+      degrade,
+      meter,
     })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return; // client went away — nothing to report

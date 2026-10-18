@@ -8,7 +8,6 @@
 // request body/query — that value is what AI tools are bound to as well.
 
 import express from "express";
-import { q } from "./db.js";
 import { HttpError, clientIp, requireUser, wrap } from "./http.js";
 import { allowRate } from "./ratelimit.js";
 import {

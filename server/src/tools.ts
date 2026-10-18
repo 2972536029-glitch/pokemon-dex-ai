@@ -70,7 +70,7 @@ export const ZH_NAME_ALIASES: Record<string, string> = {
 
 /** Normalize a model-supplied name into PokeAPI's slug format. */
 export function normalizePokemonName(raw: unknown): string {
-  let name = String(raw ?? "").trim().toLowerCase();
+  const name = String(raw ?? "").trim().toLowerCase();
   if (ZH_NAME_ALIASES[name]) return ZH_NAME_ALIASES[name];
   // PokeAPI slugs use "-" for spaces and drop apostrophes/periods:
   // "Mr. Mime" -> "mr-mime", "Farfetch'd" -> "farfetchd", "Ho-Oh" -> "ho-oh".
