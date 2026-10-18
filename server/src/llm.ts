@@ -169,7 +169,7 @@ export interface StreamChatOptions {
 }
 
 export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmStreamEvent> {
-  if (opts.meter) recordLlmUsage(opts.meter, estimateTokens(...opts.messages.map((m) => String(m.content ?? ""))));
+  const inTokensEst = opts.meter ? estimateTokens(...opts.messages.map((m) => String(m.content ?? ""))) : 0;
   let outChars = 0;
 
   const body: Record<string, unknown> = {
@@ -178,6 +178,9 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
     stream: true,
     temperature: 0.3, // low: this is a data lookup assistant, not a poem writer
     max_tokens: opts.maxTokens ?? 1024,
+    // v3.3:真实 usage(GLM 实测支持,usage 随最后一个 chunk 到达,无 choices)——
+    // 预算记账升级为"真值优先、估算兜底",字符/2 只再做兜底口径。
+    stream_options: { include_usage: true },
   };
   if (opts.tools?.length) body.tools = opts.tools;
   // GLM-4.5+ models ship with a built-in thinking mode that streams a
@@ -217,6 +220,8 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
   const pending = new Map<number, { id: string; name: string; arguments: string }>();
   let finishReason: string | null = null;
   let sawDone = false;
+  // v3.3:真实用量。holder 而非裸 let——赋值发生在闭包里,TS 流分析不追踪。
+  const usage = { v: null as { prompt: number; completion: number } | null };
 
   const handleEvent = function* (payload: string): Generator<LlmStreamEvent> {
     if (payload === "[DONE]") {
@@ -228,6 +233,10 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
       json = JSON.parse(payload);
     } catch {
       return; // tolerate keep-alive/comment lines we don't understand
+    }
+    // usage 块 choices 为空数组,必须先于 choice 判空捕获
+    if (json.usage && typeof json.usage.prompt_tokens === "number") {
+      usage.v = { prompt: json.usage.prompt_tokens, completion: json.usage.completion_tokens ?? 0 };
     }
     const choice = json.choices?.[0];
     if (!choice) return;
@@ -281,8 +290,12 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
       throw new LlmError(502, "LLM stream ended without a finish reason");
     }
   } finally {
-    // 中断(客户端走人/超时)也要把已流出的部分入账——烧掉的钱不因没人看而变少
-    if (opts.meter && outChars > 0) recordLlmUsage(opts.meter, Math.ceil(outChars / 2));
+    // 中断(客户端走人/超时/上游报错)同样入账——烧掉的钱不因没人看而变少。
+    // v3.3:真值优先(GLM usage),缺失时估算 = 输入 + 已流出输出(字符/2)。
+    if (opts.meter) {
+      if (usage.v) recordLlmUsage(opts.meter, usage.v.prompt + usage.v.completion);
+      else recordLlmUsage(opts.meter, inTokensEst + (outChars > 0 ? Math.ceil(outChars / 2) : 0));
+    }
   }
 }
 
@@ -298,6 +311,7 @@ export async function chatComplete(
 ): Promise<string> {
   const inTokens = opts.meter ? estimateTokens(...messages.map((m) => String(m.content ?? ""))) : 0;
   let outChars = 0;
+  let realUsage: { prompt: number; completion: number } | null = null;
   try {
     const res = await fetch(`${GLM_CONFIG.baseUrl}/chat/completions`, {
       method: "POST",
@@ -322,9 +336,16 @@ export async function chatComplete(
     const content = json?.choices?.[0]?.message?.content;
     const text = typeof content === "string" ? content : "";
     outChars = text.length;
+    // v3.3:非流式响应恒带 usage,真值优先
+    if (json?.usage && typeof json.usage.prompt_tokens === "number") {
+      realUsage = { prompt: json.usage.prompt_tokens, completion: json.usage.completion_tokens ?? 0 };
+    }
     return text;
   } finally {
-    // 失败的调用同样花钱:输入恒入账,输出按已拿到的长度入账
-    if (opts.meter) recordLlmUsage(opts.meter, inTokens + Math.ceil(outChars / 2));
+    // 失败的调用同样花钱:真值缺失时按估算入账(输入 + 已拿到输出的字符/2)
+    if (opts.meter) {
+      if (realUsage) recordLlmUsage(opts.meter, realUsage.prompt + realUsage.completion);
+      else recordLlmUsage(opts.meter, inTokens + Math.ceil(outChars / 2));
+    }
   }
 }

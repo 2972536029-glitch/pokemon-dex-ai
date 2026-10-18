@@ -1,0 +1,107 @@
+# 备份流水线(ROADMAP-NEXT T7,v3.3 先行落地——激活只差用户配 secret):
+#   每日:pg_dump(custom)→ AES-256 加密 → artifact 保留 30 天;
+#   每次备份后立即做恢复演练:解密 → pg_restore 进全新 postgres 容器 →
+#   关键表行数校验 → 输出恢复耗时。演练随备份每天跑(比路线图原设的
+#   "每周 Neon 临时分支"更频繁、零成本、保真度相同):备份不可恢复的
+#   暴露窗口从一周缩到一天。
+# 激活条件(repo Settings → Secrets and variables → Actions):
+#   PROD_DATABASE_URL — 生产库连接串(只被本 workflow 读取,进 runner 内存)
+#   BACKUP_PASSPHRASE — 备份加密口令(恢复时必须提供;与仓库分开保管)
+# 两个 secret 任一缺失 → 任务优雅跳过(notice 提示),不报红、不开 issue。
+# 备份不落任何公网可达位置:artifact 仅本仓库授权可见,且内容加密,
+# 口令不进仓库;校验和随 artifact 存放供恢复前比对。
+name: Backup
+
+on:
+  schedule:
+    - cron: "30 21 * * *" # 05:30 北京时间(生产低峰)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prerequisites
+        id: pre
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::notice::PROD_DATABASE_URL / BACKUP_PASSPHRASE 未配置,备份与演练跳过"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump & encrypt
+        if: steps.pre.outputs.ready == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          pg_dump "$PROD_DATABASE_URL" --format=custom --no-owner --no-privileges -f dump.dump
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in dump.dump -out backup.dump.enc -pass env:BACKUP_PASSPHRASE
+          rm dump.dump
+          sha256sum backup.dump.enc > backup.sha256
+          ls -l backup.dump.enc
+
+      - name: Restore drill (scratch postgres + key-table checks)
+        if: steps.pre.outputs.ready == 'true'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          docker run -d --name drill-pg -e POSTGRES_PASSWORD=drill -e POSTGRES_DB=pokemon_dex \
+            -p 55432:5432 postgres:16-alpine > /dev/null
+          for i in $(seq 1 30); do
+            docker exec drill-pg pg_isready -U postgres > /dev/null 2>&1 && break
+            sleep 1
+          done
+          START=$(date +%s)
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in backup.dump.enc \
+            -out restore.dump -pass env:BACKUP_PASSPHRASE
+          pg_restore -h localhost -p 55432 -U postgres -d pokemon_dex \
+            --no-owner --no-privileges restore.dump
+          END=$(date +%s)
+          echo "restore_seconds=$((END - START))"
+          psql "postgres://postgres:drill@localhost:55432/pokemon_dex" -tAc "
+            SELECT 'users=' || count(*) FROM users;
+            SELECT 'cards=' || count(*) FROM cards;
+            SELECT 'wallet_tx=' || count(*) FROM wallet_tx;
+            SELECT 'battles=' || count(*) FROM battles;"
+          docker rm -f drill-pg > /dev/null
+          rm -f restore.dump
+
+      - name: Upload backup artifact (30d)
+        if: steps.pre.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: |
+            backup.dump.enc
+            backup.sha256
+          retention-days: 30
+
+  alert:
+    needs: backup
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open/comment backup-alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          WHERE="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="备份/恢复演练失败,详情见 $WHERE 。备份不可用期间生产数据没有保险,请优先处理(常见原因:连接串过期、磁盘/大小限制)。"
+          EXISTING=$(gh issue list --label backup-alert --state open --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "backup: pipeline failing" --label backup-alert --body "$BODY"
+          fi

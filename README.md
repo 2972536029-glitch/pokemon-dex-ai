@@ -125,7 +125,7 @@ docker run -p 3000:3000 -e GLM_API_KEY=你的key -e DATABASE_URL=postgres://... 
 
 ## CI
 
-push/PR 自动跑 lint(error 挡板)+ typecheck + build + 包体预算 + 真实 Postgres(service container)上的六套件(185 断言),无外部密钥依赖(mock 模式兜底):[.github/workflows/ci.yml](.github/workflows/ci.yml)。另有 [probe.yml](.github/workflows/probe.yml) 每 30 分钟对生产拨测(health/poke 代理/首页),连续 2 次失败开 issue、恢复自动关。
+push/PR 自动跑 lint(error 挡板)+ typecheck + build + 包体预算 + 真实 Postgres(service container)上的六套件(187 断言),无外部密钥依赖(mock 模式兜底):[.github/workflows/ci.yml](.github/workflows/ci.yml)。另有 [probe.yml](.github/workflows/probe.yml) 每 30 分钟对生产拨测(health/poke 代理/首页/登录冒烟兼 __Host- cookie 验证;前四项登录未配置时自动跳过),连续 2 次失败开 issue、恢复自动关,并可 ping healthchecks.io 做死人开关(HC_PING_URL)。[backup.yml](.github/workflows/backup.yml) 每日加密备份 + 恢复演练,激活需配置 secrets(见下)。
 
 ## 测试
 
@@ -133,14 +133,23 @@ push/PR 自动跑 lint(error 挡板)+ typecheck + build + 包体预算 + 真实 
 npm run lint               # eslint 挡板(error 级;react-hooks 规则集)
 npm run build && node qa/size-check.mjs   # 包体预算:超基线 +10% 红(--update 立新基线)
 node qa/battle.test.mjs    # 对战引擎回归 34 断言(伤害公式/克制/替换/v3 结算)
-node qa/battle-unit.test.mjs  # v3 经济表驱动单测 11 块(能量常数/克制表/先制度/降档,零 DB)
+node qa/battle-unit.test.mjs  # v3 经济表驱动单测 13 块(能量常数/克制表/先制度/降档/KO 换人零动量,零 DB)
 node qa/e2e.mjs            # API 端到端 40 断言(注册/钱包/幂等抽卡/编队/对战/并发)
 node qa/friends-e2e.mjs    # 好友系统 43 断言(关系/赠送索要/异步 PvP)
 node qa/v23-e2e.mjs        # v2.3 回归 24 断言(十连语义/幂等/pity 形状)
 node qa/telemetry-e2e.mjs  # 可观测性 + LLM 预算 33 断言(采集/CSAT/指标推送/熔断降级)
 ```
 
-LLM 预算环境变量:`LLM_USER_DAILY_TOKENS`(默认 100k)/`LLM_GLOBAL_DAILY_TOKENS`(默认 2M)——token≈字符/2 近似;不随 `RATE_LIMIT_SCALE` 放大,QA 用小值触发熔断路径。本地起 QA 服务器示例:`MOCK_LLM=1 LLM_USER_DAILY_TOKENS=20000 CRON_SECRET=dev npx tsx server/src/index.ts`。
+LLM 预算环境变量:`LLM_USER_DAILY_TOKENS`(默认 100k)/`LLM_GLOBAL_DAILY_TOKENS`(默认 2M)——v3.3 起记账真值优先(GLM 返回的 usage),估算(字符/2)只做兜底;不随 `RATE_LIMIT_SCALE` 放大,QA 用小值触发熔断路径。运维诊断:`GET /api/llm/usage`(CRON_SECRET Bearer 或 x-seed-key)返回 24h 按消费点聚合与 top-10 预算桶。本地起 QA 服务器示例:`MOCK_LLM=1 LLM_USER_DAILY_TOKENS=20000 CRON_SECRET=dev npx tsx server/src/index.ts`。
+
+## 运维 secrets 清单(GitHub Actions)
+
+| secret | 用途 | 缺失时行为 |
+|:---|:---|:---|
+| `PROD_DATABASE_URL` | [backup.yml](.github/workflows/backup.yml) 每日 pg_dump 源 | 备份任务 notice 跳过 |
+| `BACKUP_PASSPHRASE` | 备份 AES-256 加密口令(恢复必须提供,与仓库分开保管) | 同上 |
+| `PROBE_USER` / `PROBE_PASS` | 生产拨测的登录冒烟专用账号(建议注册 `probe-bot` 类用户) | 登录检查标记 skipped |
+| `HC_PING_URL` | healthchecks.io 死人开关:拨测成功 ping 本体、失败 ping `/fail` | 跳过 ping |
 
 ## 文档
 

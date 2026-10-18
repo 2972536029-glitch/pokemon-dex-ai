@@ -300,6 +300,34 @@ export function mountTelemetry(): express.Router {
     })
   );
 
+  // ---- LLM 用量诊断(运维 curl 口,零前端面) --------------------------------
+  // v3.3:看板已迁 Datadog;按"桶"(用户/IP)的 top 消费不适合进指标
+  // (tag 基数纪律),运维诊断走这个鉴权端点:24h 按消费点聚合 + top-10 桶。
+  // 鉴权与 flush 同款(CRON_SECRET Bearer / x-seed-key),零新密钥。
+  router.get(
+    "/api/llm/usage",
+    wrap("llm-usage", "服务暂时不可用,请稍后再试", async (req, res) => {
+      if (!flushAuthorized(req)) throw new HttpError(403, "forbidden", "forbidden");
+      const win = "created_at > now() - interval '24 hours'";
+      const [byFeature, topIdents] = await Promise.all([
+        q<{ feature: string; tokens: number; capped: number }>(
+          `SELECT feature, COALESCE(sum(tokens), 0)::int AS tokens,
+                  count(*) FILTER (WHERE capped)::int AS capped
+           FROM llm_usage WHERE ${win}
+           GROUP BY feature ORDER BY tokens DESC`,
+          []
+        ),
+        q<{ ident: string; feature: string; tokens: number; calls: number }>(
+          `SELECT ident, feature, COALESCE(sum(tokens), 0)::int AS tokens, count(*)::int AS calls
+           FROM llm_usage WHERE ${win} AND capped = false
+           GROUP BY ident, feature ORDER BY tokens DESC LIMIT 10`,
+          []
+        ),
+      ]);
+      res.json({ ok: true, window: "24h", byFeature: byFeature.rows, topIdents: topIdents.rows });
+    })
+  );
+
   // ---- 每日指标推送(Vercel Cron 调用) -------------------------------------
   router.get(
     "/api/metrics/flush",
