@@ -2,7 +2,7 @@
 // 无实际功能,纯氛围——暮色星空 + 山影 + 光尘 + 宝可梦立绘浮影,
 // 中央华丽标题 + 饰边「开启冒险」按钮,点击进入业务。
 // 全部 CSS/SVG 原创,无任何第三方美术素材。
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { artworkUrl } from "../shared/artwork.js";
 import "./splash.css";
 

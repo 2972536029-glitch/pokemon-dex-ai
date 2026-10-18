@@ -172,3 +172,36 @@ test("格挡/换人不存在降档(非出招动作不进降档分支)", () => {
   assert.equal(rg.state.userTeam[0].energy, 60, `got ${rg.state.userTeam[0].energy}`);
   assert.ok(!rg.events.some((e) => e.kind === "info"));
 });
+
+// ---- 8. KO 自动换人:顶替上场不拿动量(动量 +10 只给主动换人) -------------
+test("KO 自动换人不给动量能量(与主动换人的经济分界)", () => {
+  const dying = v3(4, "d", ["fire"], { ...STATS, speed: 1 });
+  dying.hp = 1; // damageV3 对非免疫目标保底 1,任何命中必 KO
+  const bench = v3(6, "b", ["water"]);
+  bench.energy = 7; // 非默认值:回合回能 +5 → 12;若误发 +10 动量会变 22,一测即穿
+  const ai = v3(1, "a", ["normal"], { ...STATS, speed: 999 });
+  const r = resolveBattleTurn(
+    state([dying, bench], [ai]),
+    { kind: "move", moveId: "fire-strike-q" },
+    { kind: "move", moveId: "tackle" },
+    seededRng(13)
+  );
+  // 用户迅招先手(pri 1),AI 随后普攻必杀 hp=1 → 自动换人
+  assert.ok(r.events.some((e) => e.kind === "ko"), "必须发生 KO");
+  assert.ok(r.events.some((e) => e.kind === "switch"), "必须有自动换人");
+  assert.equal(r.state.userTeam[1].energy, 7 + ENERGY.REGEN_BENCH, "顶替者只吃回合回能,无 SWITCH_IN");
+});
+
+// ---- 9. 重招/极招实付:扣费严格按表(45/90),结算序 = 回能→扣费 ------------
+test("heavy/ult 实付扣费(45/90)", () => {
+  // AI 持续防御:用户侧不受伤,能量变动只剩 回能-扣费 两项,算术最干净
+  const heavyUser = v3(1, "h", ["fire"]);
+  heavyUser.energy = 45; // +15 回能 → 60,付 heavy 45 → 15
+  const r1 = resolveBattleTurn(state([heavyUser], [v3(3, "x", ["fire"])]), { kind: "move", moveId: "fire-strike-h" }, { kind: "guard" }, seededRng(14));
+  assert.equal(r1.state.userTeam[0].energy, 15, `got ${r1.state.userTeam[0].energy}`);
+
+  const ultUser = v3(1, "u", ["fire"]);
+  ultUser.energy = 80; // +15 → 95(未触 CAP),付 ult 90 → 5
+  const r2 = resolveBattleTurn(state([ultUser], [v3(3, "y", ["fire"])]), { kind: "move", moveId: "fire-strike-u" }, { kind: "guard" }, seededRng(15));
+  assert.equal(r2.state.userTeam[0].energy, 5, `got ${r2.state.userTeam[0].energy}`);
+});

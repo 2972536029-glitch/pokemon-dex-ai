@@ -402,15 +402,6 @@ export interface CatalogMon {
   types: string[]; stats: Record<string, number>;
 }
 
-export function pickAiTeam(catalog: CatalogMon[], rng: Rng = systemRng): CatalogMon[] {
-  const pool = [...catalog];
-  const picks: CatalogMon[] = [];
-  while (picks.length < 3 && pool.length) {
-    picks.push(pool.splice(Math.floor(rng.next() * pool.length), 1)[0]);
-  }
-  return picks;
-}
-
 // ==================== v3 战斗引擎:意图 × 能量 × 弱点节奏 ====================
 // 设计依据 docs/updates/v3.0-battle-rework.md(调研驱动的四件套):
 // 1. 意图预告(Slay the Spire)——AI 行动在玩家出手前掷定并如实展示,反制真实。

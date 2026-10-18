@@ -162,6 +162,10 @@ export interface StreamChatOptions {
   /** v3.2:传入才计量。预算闸(llmGate)由调用方在发起前自行检查;
    *  这里只负责记账:输入在流开始时入账,输出在流结束/中断时入账。 */
   meter?: LlmMeter;
+  /** v3.2.1(QA-044):输出上限。token 预算是事后计量,输出是最难预估的
+   *  一头——battle/lore 各有 160/300 的界,chat 不能裸奔,否则单发超调
+   *  幅度不可控。1024 对回答与 tool_calls 实参都是充裕上界。 */
+  maxTokens?: number;
 }
 
 export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmStreamEvent> {
@@ -173,6 +177,7 @@ export async function* streamChat(opts: StreamChatOptions): AsyncGenerator<LlmSt
     messages: opts.messages,
     stream: true,
     temperature: 0.3, // low: this is a data lookup assistant, not a poem writer
+    max_tokens: opts.maxTokens ?? 1024,
   };
   if (opts.tools?.length) body.tools = opts.tools;
   // GLM-4.5+ models ship with a built-in thinking mode that streams a

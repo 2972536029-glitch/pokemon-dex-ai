@@ -9,6 +9,7 @@
 // - qa/ 不进 lint 范围:测试脚本是"一次写完跑绿"的产物,挡板管生产代码。
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
+import reactPlugin from "eslint-plugin-react";
 import globals from "globals";
 
 export default tseslint.config(
@@ -39,6 +40,17 @@ export default tseslint.config(
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    rules: {
+      // v3.2.1(QA-041):unused-var 挡板必须覆盖前端——T1 验收"故意引入
+      // unused var → CI 红"不分端;独立评审实测 .jsx 此前不拦。
+      // eslint 核心 no-unused-vars 不认识 JSX:组件只在 JSX 里使用会被
+      // 误报,必须配 jsx-uses-vars 让规则看见 JSX 用法(工业标准做法)。
+      "react/jsx-uses-vars": "error",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+    },
+    plugins: {
+      react: reactPlugin,
     },
   },
 

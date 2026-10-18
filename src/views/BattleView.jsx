@@ -70,7 +70,7 @@ export default function BattleView({ onGoLogin, onGoCollection }) {
   const [popup, setPopup] = useState(null); // {side, text, cls}
   const [lunge, setLunge] = useState(null); // "user"|"ai" 突进中
   const [hitFlash, setHitFlash] = useState(null); // 受击抖动
-  const [stageImpact, setStageImpact] = useState(false);
+  const [, setStageImpact] = useState(false); // 只写不读:触发impact动画用,值本身不渲染
   const [confetti, setConfetti] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);

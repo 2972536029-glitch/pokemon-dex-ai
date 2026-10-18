@@ -3,6 +3,7 @@
 // 灵感与守卫原则同 agent.ts/guard.ts:宁缺毋错。
 import express from "express";
 import { chatComplete, GLM_CONFIG, llmGate } from "./llm.js";
+import type { LlmMeter } from "./llm.js";
 import { HttpError, clientIp, wrap } from "./http.js";
 import { allowRate } from "./ratelimit.js";
 
@@ -110,43 +111,46 @@ export function mountLore(): express.Router {
       throw new HttpError(429, "查询太频繁,请稍后再试", "rate_limited");
     }
     const facts = await loadFacts(id);
-      // v3.2:token 预算闸(lore 是匿名消费,按 IP 桶)。超预算降级为官方
-      // 图鉴原文——宁少一点 AI 润色,不给用户空白或报错;降级结果不进缓存
-      // (预算明天恢复,缓存会把降级文案钉死成永久答案)。
-      const gate = await llmGate({ feature: "lore", ident: `ip:${clientIp(req)}`, userId: null });
-      if (!gate.ok) {
-        res.json({
-          lore: facts.flavor || `${facts.zhName}(${facts.enName}),${facts.genus}。AI 小传额度已用完,先看官方图鉴说明。`,
-          checked: 0,
-          warnings: 0,
-          degraded: true,
-          reason: "llm_budget",
-        });
-        return;
-      }
-      const prompt = `你是宝可梦图鉴的编辑。基于以下【事实】为${facts.zhName}(${facts.enName},${facts.genus})写一段 80 字以内的中文背景介绍。
+    // v3.2:token 预算闸(lore 是匿名消费,按 IP 桶)。超预算降级为官方
+    // 图鉴原文——宁少一点 AI 润色,不给用户空白或报错;降级结果不进缓存
+    // (预算明天恢复,缓存会把降级文案钉死成永久答案)。
+    // v3.2.1(QA-042):gate 与记账收同一个 meter 对象——"同桶一处构造"
+    // 是本批沉淀的纪律,两处独立构造等于给未来的自己埋雷。
+    const meter: LlmMeter = { feature: "lore", ident: `ip:${clientIp(req)}`, userId: null };
+    const gate = await llmGate(meter);
+    if (!gate.ok) {
+      res.json({
+        lore: facts.flavor || `${facts.zhName}(${facts.enName}),${facts.genus}。AI 小传额度已用完,先看官方图鉴说明。`,
+        checked: 0,
+        warnings: 0,
+        degraded: true,
+        reason: "llm_budget",
+      });
+      return;
+    }
+    const prompt = `你是宝可梦图鉴的编辑。基于以下【事实】为${facts.zhName}(${facts.enName},${facts.genus})写一段 80 字以内的中文背景介绍。
 要求:只使用事实中出现的信息与数字,不得编造任何数值或设定;语言自然,不要逐条罗列。
 【事实】身高 ${facts.heightM}m;体重 ${facts.weightKg}kg;HP ${facts.stats.hp};攻击 ${facts.stats.attack};防御 ${facts.stats.defense};速度 ${facts.stats.speed}。官方说明:${facts.flavor}`;
-      const lore = await chatComplete(
-        [
-          { role: "system", content: "你是严谨的宝可梦图鉴编辑,只依据给定事实写作,绝不编造数字。" },
-          { role: "user", content: prompt },
-        ],
-        {
-          signal: AbortSignal.timeout(20_000),
-          maxTokens: 300,
-          temperature: 0.5,
-          meter: { feature: "lore", ident: `ip:${clientIp(req)}`, userId: null },
-        }
-      );
-      const g = guardNumbers(lore, facts);
-      const payload = {
-        lore: g.text.trim() || facts.flavor,
-        checked: g.checked,
-        warnings: g.warnings,
-      };
-      cache.set(id, payload);
-      res.json(payload);
+    const lore = await chatComplete(
+      [
+        { role: "system", content: "你是严谨的宝可梦图鉴编辑,只依据给定事实写作,绝不编造数字。" },
+        { role: "user", content: prompt },
+      ],
+      {
+        signal: AbortSignal.timeout(20_000),
+        maxTokens: 300,
+        temperature: 0.5,
+        meter,
+      }
+    );
+    const g = guardNumbers(lore, facts);
+    const payload = {
+      lore: g.text.trim() || facts.flavor,
+      checked: g.checked,
+      warnings: g.warnings,
+    };
+    cache.set(id, payload);
+    res.json(payload);
   }));
   return router;
 }

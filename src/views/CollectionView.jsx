@@ -21,7 +21,7 @@ export default function CollectionView({ onGoLogin, onGoBattle }) {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [typeFilter, setTypeFilter] = useState(null); // null = 全部
-  const [sortBy, setSortBy] = useState("bst"); // bst | name
+  const [sortBy] = useState("bst"); // bst | name
 
   useEffect(() => {
     if (!me) return;
